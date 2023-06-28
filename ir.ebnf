@@ -1,0 +1,284 @@
+// ir.ebnf
+// Manifest Parser Intermediate Representation Grammar
+// Adapted from the TOML ABNF https://github.com/toml-lang/toml/blob/1.0.0/toml.abnf
+// unimplemented shown with //TOML
+// *.ini unique highlighed with //INI
+
+manifest: expression ( newline expression )*
+
+expression: ws [ comment ]
+          | ws table ws [ comment ]
+          | ws keyval ws [ comment ]
+          | ws keynoval
+
+// Whitespace
+
+ws: WSCHAR*
+WSCHAR: "\x20"  // Space
+      | "\x09"  // Horizontal tab
+
+// Newline
+
+!newline: "\x0A"     // LF
+        | "\x0D\x0A" // CRLF
+
+// Comment
+
+COMMENT_START_SYMBOL: "\x23" // #
+// NOTE: ranges seem to not work in Lark for high valued unicode
+// NON_ASCII: "\x80".."\xD7FF" | "\xE000".."\x10FFFF"
+NON_ASCII: "\x80".."\xFF" // | "\x100".."\xFFF" | "\x1000".."\xD7FF" | "\xE000".."\xFFFF" | "\x10000".."\x10FFFF"
+NON_EOL: "\x09" | "\x20".."\x7F" | NON_ASCII
+
+comment: COMMENT_START_SYMBOL NON_EOL*
+
+// Key-Value pairs
+
+keyval: key keyval_sep val
+keynoval: KEYNO keyval_sep
+KEYNO: "head" // INI special case of key that has no value
+     | "dupe-manifest"
+     | "support-files"
+     | "tail"
+
+key: simple_key | dotted_key
+simple_key: quoted_key | unquoted_key
+
+//  /A-Za-z0-9_-/ //
+unquoted_key: ( ALPHA | DIGIT | minus | underscore )+ // A-Z | a-z | 0-9 | - | _
+!minus: "\x2D"
+!underscore: /_/ // "\x5F"
+quoted_key: basic_string | literal_string
+dotted_key: simple_key ( _dot_sep simple_key )+
+
+_dot_sep  : ws "\x2E" ws  // . Period
+
+keyval_sep: ws equals ws // =
+
+//TOML: inline_table not implemented for val
+//INI unquoted_string_val is unique to ini
+val: boolean | date_time | float | integer | string | unquoted_string_val | array | implicit_array | mp_expr
+
+// String
+
+string: ml_basic_string | basic_string | ml_literal_string | literal_string
+
+unquoted_string_val: ws_comment_newline unquoted_string // INI
+
+unquoted_string: ( ALPHA | DIGIT | unquoted_char )+ //INI
+               | ( ALPHA | DIGIT | unquoted_char )+  equals ( ALPHA | DIGIT | unquoted_char )+
+!equals: "="
+!unquoted_char: ( "?" | ":" | "/" | "-" | "+" | "_" | "." | "!" | "*" | "-" | "^" | "," | "'" | "\"" | "<" | ">" | "{" | "}" | "@" ) //INI
+
+// Basic String
+
+basic_string: _QUOTATION_MARK basic_char* _QUOTATION_MARK
+
+_QUOTATION_MARK: "\x22" // "
+
+basic_char: basic_unescaped | escaped
+!basic_unescaped: WSCHAR | "\x21" | "\x23".."\x5B" | "\x5D".."\x7E" | NON_ASCII
+escaped: _ESCAPE escape_seq_char
+
+_ESCAPE: "\x5C"                   // \
+!escape_seq_char: "\x22"          // "    quotation mark  U+0022
+                | "\x5C"          // \    reverse solidus U+005C
+                | "\x62"          // b    backspace       U+0008
+                | "\x66"          // f    form feed       U+000C
+                | "\x6E"          // n    line feed       U+000A
+                | "\x72"          // r    carriage return U+000D
+                | "\x74"          // t    tab             U+0009
+                | "x" HEXDIG HEXDIG // xXX              U+00XX
+                | "\x75" HEXDIG HEXDIG HEXDIG HEXDIG // uXXXX                U+XXXX
+                | "\x55" HEXDIG HEXDIG HEXDIG HEXDIG HEXDIG HEXDIG HEXDIG HEXDIG // UXXXXXXXX            U+XXXXXXXX
+
+// Multiline Basic String
+
+ml_basic_string: _ml_basic_string_delim [ newline ] ml_basic_body _ml_basic_string_delim
+_ml_basic_string_delim: _QUOTATION_MARK _QUOTATION_MARK _QUOTATION_MARK
+ml_basic_body: mlb_content* ( mlb_quotes mlb_content+ )* [ mlb_quotes ]
+
+mlb_content: mlb_char | newline | mlb_escaped_nl
+mlb_char: basic_unescaped | escaped
+!mlb_quotes: _QUOTATION_MARK [ _QUOTATION_MARK ]
+mlb_escaped_nl: _ESCAPE ws newline ( WSCHAR | newline )*
+
+// Literal String
+
+literal_string: _APOSTROPHE literal_char* _APOSTROPHE
+
+_APOSTROPHE: "\x27" // '
+
+!literal_char: "\x09" | "\x20".."\x26" | "\x28".."\x7E" | NON_ASCII
+
+// Multiline Literal String
+
+ ml_literal_string: _ml_literal_string_delim [ newline ] ml_literal_body _ml_literal_string_delim
+ _ml_literal_string_delim: _APOSTROPHE _APOSTROPHE _APOSTROPHE
+ ml_literal_body: mll_content* ( mll_quotes mll_content+ )* [ mll_quotes ]
+
+ mll_content: literal_char | newline
+ !mll_quotes: _APOSTROPHE [ _APOSTROPHE ]
+
+// Integer
+
+integer: dec_int | hex_int | oct_int | bin_int
+
+!plus: "\x2B"                        // +
+!digit1_9: "\x31".."\x39"                 // 1-9
+!digit0_7: "\x30".."\x37"                 // 0-7
+!digit0_1: "\x30".."\x31"                 // 0-1
+
+!hex_prefix: "0x"               // 0x
+!oct_prefix: "0o"               // 0o
+!bin_prefix: "0b"               // 0b
+
+dec_int: [ minus | plus ] unsigned_dec_int
+unsigned_dec_int: DIGIT | digit1_9 ( DIGIT | underscore DIGIT )+
+
+hex_int: hex_prefix HEXDIG ( HEXDIG | underscore HEXDIG )*
+oct_int: oct_prefix digit0_7 ( digit0_7 | underscore digit0_7 )*
+bin_int: bin_prefix digit0_1 ( digit0_1 | underscore digit0_1 )*
+
+// Float
+
+float: float_int_part ( exp | frac [ exp ] )
+     | special_float
+
+float_int_part: dec_int
+frac: _decimal_point zero_prefixable_int
+_decimal_point: "\x2E"               // .
+zero_prefixable_int: DIGIT ( DIGIT | underscore DIGIT )*
+
+exp: e float_exp_part
+!e: "e" | "E"
+!float_exp_part: [ minus | plus ] zero_prefixable_int
+
+special_float: [ minus | plus ] ( INF | NAN )
+INF: "inf" // inf
+NAN: "nan"  // nan
+
+// Boolean
+
+boolean: true | false
+
+true: "true" // %x74.72.75.65     // true
+false: "false" // %x66.61.6C.73.65  // false
+
+// Date and Time (as defined in RFC 3339)
+
+date_time     : offset_date_time | local_date_time | local_date | local_time
+
+date_fullyear : DIGIT DIGIT DIGIT DIGIT
+date_month    : DIGIT DIGIT  // 01-12
+date_mday     : DIGIT DIGIT  // 01-28, 01-29, 01-30, 01-31 based on month/year
+!time_delim    : "T" | "t" | " "    // T, t, or space
+time_hour     : DIGIT DIGIT  // 00-23
+time_minute   : DIGIT DIGIT  // 00-59
+time_second   : DIGIT DIGIT  // 00-58, 00-59, 00-60 based on leap second rules
+time_secfrac  : dot DIGIT+
+!dot           : "."
+time_numoffset: ( plus | minus ) time_hour colon time_minute
+!colon         : ":"
+time_offset   : z | time_numoffset
+!z            : "Z" | "z"
+
+partial_time  : time_hour colon time_minute colon time_second [ time_secfrac ]
+              | time_hour colon time_minute // missed in the abnf
+full_date     : date_fullyear minus date_month minus date_mday
+full_time     : partial_time time_offset
+
+// Offset Date-Time
+
+offset_date_time: full_date time_delim full_time
+
+// Local Date-Time
+
+local_date_time: full_date time_delim partial_time
+
+// Local Date
+
+local_date: full_date
+
+// Local Time
+
+local_time: partial_time
+
+// Array
+
+array: _array_open [ array_values ] ws_comment_newline _array_close
+
+_array_open: "\x5B" // [
+_array_close: "\x5D" // ]
+
+array_values: ws_comment_newline val ws_comment_newline array_sep array_values
+            | ws_comment_newline val ws_comment_newline [ array_sep ]
+
+!array_sep: "\x2C"  // , Comma
+
+ws_comment_newline: ( WSCHAR | [ comment ] newline )*
+
+// Implict Array INI
+
+ws_comment_newline1: ( WSCHAR | [ comment ] newline )+
+
+implicit_array: ws_comment_newline1 unquoted_string implicit_array // INI
+              | ws_comment_newline1 unquoted_string ws_comment_newline1 unquoted_string
+
+// Table
+
+//TOML array_table not implemented
+table: std_table | mp_table
+
+mp_table: _std_table_open unquoted_string _std_table_close //INI
+
+// Standard Table
+
+std_table: _std_table_open key _std_table_close
+
+_std_table_open : "\x5B" ws     // [ Left square bracket
+_std_table_close: ws "\x5D"     // ] Right square bracket
+
+// Inline Table
+
+//TOML inline_table: inline_table_open [ inline_table_keyvals ] inline_table_close
+
+//TOML inline_table_open : %x7B ws     // {
+//TOML inline_table_close: ws %x7D     // }
+//TOML inline_table_sep  : ws %x2C ws  // , Comma
+
+//TOML inline_table_keyvals: keyval [ inline_table_sep inline_table_keyvals ]
+
+// Array Table
+
+//TOML array_table: array_table_open key array_table_close
+
+//TOML array_table_open : %x5B.5B ws  // [[ Double left square bracket
+//TOML array_table_close: ws %x5D.5D  // ]] Double right square bracket
+
+
+// Built-in ABNF terms, reproduced here for clarity
+
+ALPHA: ALPHA_UPPER | ALPHA_LOWER
+ALPHA_UPPER: "A" | "B" | "C" | "D" | "E" | "F" | "G" | "H" | "I" | "J" | "K" | "L" | "M" | "N" | "O" | "P" | "Q" | "R" | "S" | "T" | "U" | "V" | "W" | "X" | "Y" | "Z"
+ALPHA_LOWER: "a" | "b" | "c" | "d" | "e" | "f" | "g" | "h" | "i" | "j" | "k" | "l" | "m" | "n" | "o" | "p" | "q" | "r" | "s" | "t" | "u" | "v" | "w" | "x" | "y" | "z"
+
+DIGIT: "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9"
+
+HEXDIG: DIGIT | "a" | "b" | "c" | "d" | "e" | "f" | "A" | "B" | "C" | "D" | "E" | "F"
+
+// Manifest Parser expression INI
+
+mp_expr: ws_comment_newline1 mp_expr // INI, 2
+       | lparen ws_comment_newline mp_expr ws_comment_newline rparen // 5
+       | mp_not ws_comment_newline mp_expr // 3
+       | mp_expr ws mp_logical ws mp_expr // 5
+       | mp_expr ws_comment_newline1 mp_expr // 3
+       | mp_expr ws_comment_newline mp_op ws_comment_newline mp_expr // 5
+       | integer | string | boolean | unquoted_key
+
+!lparen: "("
+!rparen: ")"
+!mp_not: "!"
+!mp_op: "==" | "!=" | "<" | ">" | "<=" | ">="
+!mp_logical: "&&" | "||"

@@ -36,9 +36,32 @@ The approach to developing mpp will be to:
 - write tests that compare the actual parsing output from TestManifest
   (mp.tests) from the existing *.ini parser and the new *.toml parser
 
-NOTE: A new parser was found, [11] Lark, which consumes EBNF and
+## Update 1
+
+A new parser was found, [11] Lark, which consumes EBNF and
 can automatically generate a parse tree... This may very well help
 construct the IR
+
+## Update 2
+
+Lark has turned out to be a very useful tool as a parser generator.
+The first pass approach to using lark leveraged the
+[LALR](https://lark-parser.readthedocs.io/en/latest/parsers.html)
+parser, but that suffered from limited one token lookahead.
+Instead the [Earley](https://lark-parser.readthedocs.io/en/latest/parsers.html)
+parser is much more robust in resolving potential ambiguities.
+
+The original thought about using Hypothesis for property based
+testing was that it might provide strong data type definition
+and example generation in similar way that the
+[Spec](https://clojure.org/guides/spec) library
+provides in the Clojure programming language. It appears, however,
+that the library is primarily interested in simply porting
+the [Quick Check](https://en.wikipedia.org/wiki/QuickCheck) functionality --
+super useful in it's own right --
+but does not provide the strong type support of Spec.
+
+## References
 
 [1] Python type annotation
     https://towardsdatascience.com/data-science-write-robust-python-with-static-typing-c71b9c9c8044
@@ -93,3 +116,7 @@ This is the current heuristic for identifying *.ini files for manifest parser:
   * browser.ini
   * xpcshell.ini
 * consider other *.ini files (from those that do NOT match above), but do have an include section `^\[include:`
+
+## developing an IR
+
+This approach will implement the `--read-ini` function using lark

@@ -1,0 +1,21 @@
+./dom/media/test/mochitest.ini
+
+big recursion
+
+./layout/xul/test/browser.ini
+
+illegal comment
+
+  os != 'linux' && os != 'win' // Due to testing menubar behavior with
+
+./security/manager/ssl/tests/mochitest/mixedcontent/mochitest.ini
+
+disabled=intermitently fails, quite often, bug 487402
+
+./testing/mochitest/tests/MochiKit-1.4.2/tests/mochitest.ini
+
+disabled=This test is broken: "Error: JSAN is not defined ... Line:
+
+./toolkit/components/backgroundtasks/tests/xpcshell/xpcshell.ini
+
+reason = Bug 1804825: code coverage harness prints [CodeCoverage] output in early startup.

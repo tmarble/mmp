@@ -1,0 +1,65 @@
+#!/bin/sh
+# valid-ini
+# Copyright (c) 2023 Tom Marble
+# See LICENSE for details.
+
+dir=$(dirname $0)
+program=$(basename $0)
+build="$dir/../build"
+files="$build/mp.txt"
+passed="$build/${program}-passed.txt"
+skipped="$dir/${program}-skipped.txt"
+
+mkdir -p "$build"
+
+if [ ! -e "$files" ]; then
+    echo "creating list of all manifest parser ini files to consider"
+    if ! mmp.py --find-ini > "$files" ; then
+        echo "Unable to create list of manifestparser files"
+        rm "$files"
+        exit 1
+    fi
+    mv "$files" "$files.orig"
+    sort "$files.orig" --output "$files"
+    rm "$files.orig"
+fi
+
+if [ ! -e "$skipped" ]; then
+    touch "$skipped"
+fi
+
+if [ ! -e "$passed" ]; then
+    touch "$passed"
+fi
+
+for file in $(cat $files); do
+    if grep "$file" "$skipped" > /dev/null; then
+        continue
+    fi
+    if grep "$file" "$passed" > /dev/null; then
+        continue
+    fi
+    echo $file
+    debug="$build/output.err"
+    ini="$build/output.ini"
+    toml="$build/output.toml"
+    if ! mmp.py -r "$file" -W -o "$ini" > "$debug" 2>&1 ; then
+        echo "FAILED"
+        exit 1
+    fi
+    # if ! diff -u --ignore-space-change "$file" "$ini" ; then
+    if ! diff -u "$MOZILLA_CENTRAL/$file" "$ini" ; then
+        echo "NOT SAME"
+        exit 2
+    fi
+    if ! mmp.py -r "$file" --fix-implicit -o "$toml" > "$debug" 2>&1 ; then
+        echo "FAILED to write TOML"
+        exit 1
+    fi
+    if ! read-toml.py -r "$toml" > "$debug" 2>&1 ; then
+        echo "WROTE invalid TOML"
+        exit 1
+    fi
+    echo "$file" >> "$passed"
+    rm "$ini" "$toml" "$debug"
+done
