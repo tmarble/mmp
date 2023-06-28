@@ -19,17 +19,16 @@ for [Firefox](https://firefox-source-docs.mozilla.org/contributing/contribution_
 There are two "ACTIONS" for mmp (all the other arguments are options):
 
 1. `--find-ini` - will find and print a list of ManifestParser `*.ini` files in **mozilla-central**
-  * will find all ini files where the basenames `--match '(mochitest|chrome|a11y|browser|xpcshell).ini'`
-  * will omit ini files with **include:** directives (with `--ignore-includes`)
-
+   * will find all ini files where the basenames `--match '(mochitest|chrome|a11y|browser|xpcshell).ini'`
+   * will omit ini files with **include:** directives (with `--ignore-includes`)
 2. `--read-ini`- will read an ini file (relative to the root of **mozilla-central**)
-  * can also read TOML!
-     * Will print `== File is legal TOML? True ==` on STDERR if the input file was legal TOML
-     * You can force **mmp.py** to abort if the file is NOT TOML with `--strict-toml`
-  * and will write an output file to STDOUT (or to the `--output-file`)
-  * in the TOML format (or INI format with `--write-ini`)
-  * will show all parens around manifest parser expressions (with `--debug-expr`)
-  * will fix implict manifestparser logical expressions via disjunction (with `--fix-implicit`)
+   * can also read TOML!
+      * Will print `== File is legal TOML? True ==` on STDERR if the input file was legal TOML
+      * You can force **mmp.py** to abort if the file is NOT TOML with `--strict-toml`
+   * and will write an output file to STDOUT (or to the `--output-file`)
+   * in the TOML format (or INI format with `--write-ini`)
+   * will show all parens around manifest parser expressions (with `--debug-expr`)
+   * will fix implict manifestparser logical expressions via disjunction (with `--fix-implicit`)
 
 
 ```
