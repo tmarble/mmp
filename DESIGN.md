@@ -61,6 +61,15 @@ the [Quick Check](https://en.wikipedia.org/wiki/QuickCheck) functionality --
 super useful in it's own right --
 but does not provide the strong type support of Spec.
 
+## Update 3
+
+It is important to note that the `mmp.py` IR grammar in `ir.ebnf` currently
+does NOT handle the following legal TOML constructs (as they are not
+used in INI files):
+* Inline tables
+* Array tables
+* Parsing the full range of literal UNICODE characters
+
 ## References
 
 [1] Python type annotation

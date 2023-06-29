@@ -57,22 +57,22 @@ keyval_sep: ws equals ws // =
 
 //TOML: inline_table not implemented for val
 //INI unquoted_string_val is unique to ini
-val: boolean | date_time | float | integer | string | unquoted_string_val | array | implicit_array | mp_expr
+val: boolean | date_time | float | integer | string | array | implicit_array | unquoted_string_val | mp_expr
 
 // String
 
-string: ml_basic_string | basic_string | ml_literal_string | literal_string
+string.40: ml_basic_string | basic_string | ml_literal_string | literal_string
 
-unquoted_string_val: ws_comment_newline unquoted_string // INI
+unquoted_string_val.10: ws_comment_newline unquoted_string // INI
 
 unquoted_string: ( ALPHA | DIGIT | unquoted_char )+ //INI
                | ( ALPHA | DIGIT | unquoted_char )+  equals ( ALPHA | DIGIT | unquoted_char )+
 !equals: "="
-!unquoted_char: ( "?" | ":" | "/" | "-" | "+" | "_" | "." | "!" | "*" | "-" | "^" | "," | "'" | "\"" | "<" | ">" | "{" | "}" | "@" ) //INI
+!unquoted_char: ( "?" | ":" | "/" | "-" | "+" | "_" | "." | "!" | "*" | "-" | "^" | "," | "<" | ">" | "{" | "}" | "@" ) //INI
 
 // Basic String
 
-basic_string: _QUOTATION_MARK basic_char* _QUOTATION_MARK
+basic_string.43: _QUOTATION_MARK basic_char* _QUOTATION_MARK
 
 _QUOTATION_MARK: "\x22" // "
 
@@ -94,7 +94,7 @@ _ESCAPE: "\x5C"                   // \
 
 // Multiline Basic String
 
-ml_basic_string: _ml_basic_string_delim [ newline ] ml_basic_body _ml_basic_string_delim
+ml_basic_string.44: _ml_basic_string_delim [ newline ] ml_basic_body _ml_basic_string_delim
 _ml_basic_string_delim: _QUOTATION_MARK _QUOTATION_MARK _QUOTATION_MARK
 ml_basic_body: mlb_content* ( mlb_quotes mlb_content+ )* [ mlb_quotes ]
 
@@ -105,7 +105,7 @@ mlb_escaped_nl: _ESCAPE ws newline ( WSCHAR | newline )*
 
 // Literal String
 
-literal_string: _APOSTROPHE literal_char* _APOSTROPHE
+literal_string.41: _APOSTROPHE literal_char* _APOSTROPHE
 
 _APOSTROPHE: "\x27" // '
 
@@ -113,7 +113,7 @@ _APOSTROPHE: "\x27" // '
 
 // Multiline Literal String
 
- ml_literal_string: _ml_literal_string_delim [ newline ] ml_literal_body _ml_literal_string_delim
+ ml_literal_string.42: _ml_literal_string_delim [ newline ] ml_literal_body _ml_literal_string_delim
  _ml_literal_string_delim: _APOSTROPHE _APOSTROPHE _APOSTROPHE
  ml_literal_body: mll_content* ( mll_quotes mll_content+ )* [ mll_quotes ]
 
@@ -122,7 +122,7 @@ _APOSTROPHE: "\x27" // '
 
 // Integer
 
-integer: dec_int | hex_int | oct_int | bin_int
+integer.50: dec_int | hex_int | oct_int | bin_int
 
 !plus: "\x2B"                        // +
 !digit1_9: "\x31".."\x39"                 // 1-9
@@ -142,8 +142,8 @@ bin_int: bin_prefix digit0_1 ( digit0_1 | underscore digit0_1 )*
 
 // Float
 
-float: float_int_part ( exp | frac [ exp ] )
-     | special_float
+float.60: float_int_part ( exp | frac [ exp ] )
+       | special_float
 
 float_int_part: dec_int
 frac: _decimal_point zero_prefixable_int
@@ -160,14 +160,14 @@ NAN: "nan"  // nan
 
 // Boolean
 
-boolean: true | false
+boolean.80: true | false
 
 true: "true" // %x74.72.75.65     // true
 false: "false" // %x66.61.6C.73.65  // false
 
 // Date and Time (as defined in RFC 3339)
 
-date_time     : offset_date_time | local_date_time | local_date | local_time
+date_time.70: offset_date_time | local_date_time | local_date | local_time
 
 date_fullyear : DIGIT DIGIT DIGIT DIGIT
 date_month    : DIGIT DIGIT  // 01-12
@@ -206,7 +206,7 @@ local_time: partial_time
 
 // Array
 
-array: _array_open [ array_values ] ws_comment_newline _array_close
+array.30: _array_open [ array_values ] ws_comment_newline _array_close
 
 _array_open: "\x5B" // [
 _array_close: "\x5D" // ]
@@ -222,8 +222,8 @@ ws_comment_newline: ( WSCHAR | [ comment ] newline )*
 
 ws_comment_newline1: ( WSCHAR | [ comment ] newline )+
 
-implicit_array: ws_comment_newline1 unquoted_string implicit_array // INI
-              | ws_comment_newline1 unquoted_string ws_comment_newline1 unquoted_string
+implicit_array.20: ws_comment_newline1 unquoted_string implicit_array // INI
+                 | ws_comment_newline1 unquoted_string ws_comment_newline1 unquoted_string
 
 // Table
 
@@ -269,13 +269,13 @@ HEXDIG: DIGIT | "a" | "b" | "c" | "d" | "e" | "f" | "A" | "B" | "C" | "D" | "E" 
 
 // Manifest Parser expression INI
 
-mp_expr: ws_comment_newline1 mp_expr // INI, 2
-       | lparen ws_comment_newline mp_expr ws_comment_newline rparen // 5
-       | mp_not ws_comment_newline mp_expr // 3
-       | mp_expr ws mp_logical ws mp_expr // 5
-       | mp_expr ws_comment_newline1 mp_expr // 3
-       | mp_expr ws_comment_newline mp_op ws_comment_newline mp_expr // 5
-       | integer | string | boolean | unquoted_key
+mp_expr.0: newline ws mp_expr // INI, 3
+         | lparen ws_comment_newline mp_expr ws_comment_newline rparen // 5
+         | mp_not ws_comment_newline mp_expr // 3
+         | mp_expr ws mp_logical ws mp_expr // 5
+         | mp_expr ws_comment_newline1 mp_expr // 3
+         | mp_expr ws_comment_newline mp_op ws_comment_newline mp_expr // 5
+         | integer | string | boolean | unquoted_key
 
 !lparen: "("
 !rparen: ")"

@@ -34,13 +34,13 @@ class IRToken(Token): # type: ignore
         return s.replace('\\', '\\\\').replace('"', '\\"')
 
     def pretty_basic_string(self) -> str:
-        return '"' + self.escape_basic_string(self) + '"'
+        return '"' + self + '"'
 
     def pretty_literal_string(self) -> str:
         return "'" + self + "'"
 
     def pretty_ml_basic_string(self) -> str:
-        return '"""' + self.escape_basic_string(self) + '"""'
+        return '"""' + self + '"""'
 
     def pretty_ml_literal_string(self) -> str:
         return "'''" + self + "'''"
@@ -52,7 +52,7 @@ class IRToken(Token): # type: ignore
 
     def pretty_unquoted_string(self) -> str:
         if self.mmp.write_toml:
-            return '"' + self.escape_basic_string(self) + '"'
+            return '"' + self + '"'
         return str(self)
 
     def pretty_ws_unquoted_string_val(self) -> str:
@@ -212,14 +212,13 @@ class IRTransformer(Transformer): # type: ignore
         if not children:
             children = []
             for arg in args:
-                if arg:
+                if arg != None:
                     if isinstance(arg, IRTree):
                         children.append(arg)
                     elif isinstance(arg, IRToken): # elide empty tokens
                         if (arg.type != 'ws' and arg.type != 'ws_comment_newline') or len(arg) > 0:
                             children.append(arg)
                     else:
-                        print('CONVERT TOKEN TO IRTOKEN')
                         children.append(IRToken(arg.type, arg, self.mmp))
         tree = IRTree(rule, children)
         tree.mmp = self.mmp
@@ -245,17 +244,14 @@ class IRTransformer(Transformer): # type: ignore
         self._debug_args(args, rule)
         array_values: Tree[Any] | None = None
         if isinstance(args[-1], Tree) and args[-1].data == 'array_values': # type: ignore
-            print('  APPEND')
             array_values = args.pop() # type: ignore
             if isinstance(args[-1], Token) and args[-1].type == 'array_sep': # type: ignore
                 args.pop() # type: ignore
-                # print('  REMOVE SEP')
         else:
             array_values = IRTree(rule, [], None)
             array_values.mmp = self.mmp
             if args[-1] == None:
                 args.pop() # type: ignore
-                # print('  REMOVE None')
         array_value: IRTree = IRTree('array_value', list(args), None)
         array_value.mmp = self.mmp
         array_values.children.insert(0, array_value) # type: ignore
@@ -420,7 +416,6 @@ class IRTransformer(Transformer): # type: ignore
         self._debug_args(args, rule)
         implicit_array: Tree[Any] | None = None
         if isinstance(args[-1], Tree) and args[-1].data == 'implicit_array': # type: ignore
-            # print('  APPEND')
             implicit_array = args.pop() # type: ignore
         else:
             implicit_array = IRTree(rule, [], None)
@@ -485,7 +480,7 @@ class IRTransformer(Transformer): # type: ignore
         return self._token(args, '-', False)
 
     def ml_basic_body(self, args: Tuple[Any]) -> Token:
-        return self._token_combine(args, False)
+        return self._token_combine(args, True)
 
     def ml_basic_string(self, args: Tuple[Any]) -> Token:
         return self._token_combine(args)
@@ -589,9 +584,9 @@ class IRTransformer(Transformer): # type: ignore
         return tree
 
     def string(self, args: Tuple[Any]) -> Token:
-        rule: str = sys._getframe(1).f_code.co_name # type: ignore
+        rule: str = sys._getframe().f_code.co_name # type: ignore
         self._debug_args(args, rule)
-        return IRToken(args[0].type, args[0], self.mmp) # preserve string type
+        return IRToken(args[0].type, str(args[0]), self.mmp) # preserve string type
 
     def time_delim(self, args: Tuple[Any]) -> Token:
         return self._token(args, '', False)
@@ -920,16 +915,16 @@ class MetaManifestParser:
         except UnexpectedCharacters as e:
             self.err(f'parsing error: {e}')
             return False
-        self.err("==TRANSFORM==")
+        self.verr("==TRANSFORM==")
         self.read_toml = True # assume TOML
         manifest: Tree[Token] = IRTransformer(True, self).transform(manifest) # type: ignore
-        self.err(f"== File is legal TOML? {self.read_toml} ==")
+        self.verr(f"== File is legal TOML? {self.read_toml} ==")
         if not self.read_toml and self.strict_toml:
             self.err('error: input is not strict TOML')
             return False
-        self.err("==PLAIN==")
-        self.err(manifest)
-        self.err(f"== PRETTY as TOML? {self.write_toml}==")
+        self.verr("==PLAIN==")
+        self.verr(manifest)
+        self.verr(f"== PRETTY as TOML? {self.write_toml}==")
         self.out(manifest.pretty(), end='') # type: ignore
         return True
 
