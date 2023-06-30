@@ -3,6 +3,7 @@
 // Adapted from the TOML ABNF https://github.com/toml-lang/toml/blob/1.0.0/toml.abnf
 // unimplemented shown with //TOML
 // *.ini unique highlighed with //INI
+// For Lark specific EBNF annotations please see https://lark-parser.readthedocs.io/en/latest/_static/lark_cheatsheet.pdf
 
 manifest: expression ( newline expression )*
 
@@ -19,8 +20,8 @@ WSCHAR: "\x20"  // Space
 
 // Newline
 
-!newline: "\x0A"     // LF
-        | "\x0D\x0A" // CRLF
+!newline.4: "\x0A"     // LF
+          | "\x0D\x0A" // CRLF
 
 // Comment
 
@@ -36,7 +37,7 @@ comment: COMMENT_START_SYMBOL NON_EOL*
 
 keyval: key keyval_sep val
 keynoval: KEYNO keyval_sep
-KEYNO: "head" // INI special case of key that has no value
+KEYNO: "head" //INI special case of keys that may have no value
      | "dupe-manifest"
      | "support-files"
      | "tail"
@@ -46,27 +47,31 @@ simple_key: quoted_key | unquoted_key
 
 //  /A-Za-z0-9_-/ //
 unquoted_key: ( ALPHA | DIGIT | minus | underscore )+ // A-Z | a-z | 0-9 | - | _
+
 !minus: "\x2D"
 !underscore: /_/ // "\x5F"
-quoted_key: basic_string | literal_string
-dotted_key: simple_key ( _dot_sep simple_key )+
 
-_dot_sep  : ws "\x2E" ws  // . Period
+quoted_key: basic_string | literal_string
+dotted_key: simple_key ( dot_sep simple_key )+
+
+!dot_sep  : ws "\x2E" ws  // . Period
 
 keyval_sep: ws equals ws // =
 
 //TOML: inline_table not implemented for val
-//INI unquoted_string_val is unique to ini
+
 val: boolean | date_time | float | integer | string | array | implicit_array | unquoted_string_val | mp_expr
 
 // String
 
 string.40: ml_basic_string | basic_string | ml_literal_string | literal_string
 
-unquoted_string_val.10: ws_comment_newline unquoted_string // INI
+unquoted_string_val.10: ws_comment_newline unquoted_string //INI
 
+//INI note handle and preserve single quotes for prefs values
 unquoted_string: ( ALPHA | DIGIT | unquoted_char )+ //INI
-               | ( ALPHA | DIGIT | unquoted_char )+  equals ( ALPHA | DIGIT | unquoted_char )+
+               | ( ALPHA | DIGIT | unquoted_char )+  equals [ /'/ ] ( ALPHA | DIGIT | unquoted_char )+ [ /'/ ]
+
 !equals: "="
 !unquoted_char: ( "?" | ":" | "/" | "-" | "+" | "_" | "." | "!" | "*" | "-" | "^" | "," | "<" | ">" | "{" | "}" | "@" ) //INI
 
@@ -216,11 +221,11 @@ array_values: ws_comment_newline val ws_comment_newline array_sep array_values
 
 !array_sep: "\x2C"  // , Comma
 
-ws_comment_newline: ( WSCHAR | [ comment ] newline )*
+ws_comment_newline.6: ( WSCHAR | [ comment ] newline )*
 
 // Implict Array INI
 
-ws_comment_newline1: ( WSCHAR | [ comment ] newline )+
+ws_comment_newline1.8: ( WSCHAR | [ comment ] newline )+ // at least one ws is required
 
 implicit_array.20: ws_comment_newline1 unquoted_string implicit_array // INI
                  | ws_comment_newline1 unquoted_string ws_comment_newline1 unquoted_string
@@ -230,7 +235,7 @@ implicit_array.20: ws_comment_newline1 unquoted_string implicit_array // INI
 //TOML array_table not implemented
 table: std_table | mp_table
 
-mp_table: _std_table_open unquoted_string _std_table_close //INI
+mp_table: _std_table_open unquoted_string _std_table_close //INI manifest parser table (invalid TOML key)
 
 // Standard Table
 
@@ -256,7 +261,6 @@ _std_table_close: ws "\x5D"     // ] Right square bracket
 //TOML array_table_open : %x5B.5B ws  // [[ Double left square bracket
 //TOML array_table_close: ws %x5D.5D  // ]] Double right square bracket
 
-
 // Built-in ABNF terms, reproduced here for clarity
 
 ALPHA: ALPHA_UPPER | ALPHA_LOWER
@@ -267,15 +271,19 @@ DIGIT: "0" | "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9"
 
 HEXDIG: DIGIT | "a" | "b" | "c" | "d" | "e" | "f" | "A" | "B" | "C" | "D" | "E" | "F"
 
-// Manifest Parser expression INI
+//INI Manifest Parser expression
 
-mp_expr.0: newline ws mp_expr // INI, 3
+mp_expr.0: ws_comment_newline1 mp_expr // INI, 2
          | lparen ws_comment_newline mp_expr ws_comment_newline rparen // 5
          | mp_not ws_comment_newline mp_expr // 3
          | mp_expr ws mp_logical ws mp_expr // 5
-         | mp_expr ws_comment_newline1 mp_expr // 3
-         | mp_expr ws_comment_newline mp_op ws_comment_newline mp_expr // 5
-         | integer | string | boolean | unquoted_key
+         | mp_expr ws_comment_newline mp_expr // 3
+         | (mp_expr | mp_terminal) ws_comment_newline mp_op ws_comment_newline (mp_expr | mp_terminal) // 5
+         | alpha_unquoted_key
+
+alpha_unquoted_key: ALPHA unquoted_key
+
+mp_terminal.0: integer | string | boolean
 
 !lparen: "("
 !rparen: ")"

@@ -15,6 +15,7 @@ Should we set the legal TOML value to '' or false or ??? Other occurances includ
 * Good catch, the behaviour for each case is undefined and I think we'll have to read the consumers to figure out how they are treating these. I'd guess it's ok to remove the keys, but I'm not 100% sure. I'll get back to you on this.
 
 **@tmarble** says:
+* Currently for the value in TOML I use `'' # no value from INI`
 * if we decide to elide them we could preserve them in TOML as a comment
 
 ## Q2 special treatment for DEFAULT
@@ -83,6 +84,9 @@ mp.tests  # list of test objects
 ```
 
 * You could compare the Python data structure directly, or dump mp.tests to json / toml. You should also compare results when various parameters are passed in to ManifestParser.init (e.g strict=False or handle_defaults=False)
+
+**@tmarble** says:
+* I will implement this next
 
 ## Q6 do we need to rewrite the mp_expr parser in manifestparser?
 
@@ -171,6 +175,8 @@ Should this still be supported?
 
 **@ahal** says:
 * These all seem like good reasons to hand convert.
+**@tmarble** says:
+* I have added some additional cases... Q11+
 
 ## Q8 BIG implicit array?
 
@@ -211,3 +217,50 @@ disabled=This test is broken: "Error: JSAN is not defined ... Line:
 ```
 reason = Bug 1804825: code coverage harness prints [CodeCoverage] output in early startup.
 ```
+./devtools/client/framework/test/browser.ini
+
+`disabled=Bug 962258`
+
+./devtools/client/inspector/boxmodel/test/browser.ini
+
+`disabled=too many intermittent failures (bug 1009322)`
+
+
+./dom/smil/test/mochitest.ini
+
+`disabled=until bug 501183 is fixed`
+
+
+## Q11 Double quotes in unquoted string
+
+./browser/components/newtab/test/browser/abouthomecache/browser.ini
+./browser/components/newtab/test/browser/browser.ini
+./toolkit/components/places/tests/unit/xpcshell.ini
+
+  `tream.feeds.section.topstories.options={"provider_name":""}`
+
+## Q12 Unquoted value contains only one apostrophe
+
+./netwerk/test/unit_ipc/xpcshell.ini
+./services/sync/tests/unit/xpcshell.ini
+
+  `ntially = doesn't play nice with others.`
+
+## Q13 unusual implicit arrays
+
+./testing/xpcshell/example/unit/xpcshell-with-prefs.ini
+
+INI re-generated correctly, however parsing error leads to
+incorrect TOML. Because RHS of pref is an unquoted-key
+that gets parsed as an mp_expr --> thus all the prefs are NOT
+parsed as an implicit_array
+
+./toolkit/content/tests/chrome/chrome.ini
+
+Unusual instance of implicit array with multiple values on one line
+  `support-files = window_cursorsnap_dialog.xhtml window_cursorsnap_wizard.xhtml`
+
+./uriloader/exthandler/tests/mochitest/browser.ini
+
+Implicit array value contains a bracket
+  `file_with[funny_name.webm`

@@ -24,7 +24,7 @@ There are two "ACTIONS" for mmp (all the other arguments are options):
 2. `--read-ini`- will read an ini file (relative to the root of **mozilla-central**)
    * can also read TOML!
       * Will print `== File is legal TOML? True ==` on STDERR if the input file was legal TOML
-      * You can force **mmp.py** to abort if the file is NOT TOML with `--strict-toml`
+      * You can force **mmp.py** to abort if the file is NOT legal TOML with `--strict-toml`. It is important to note that these legal TOML features are currently _not_ supported in **mmp.py**: inline_table, array_table, and unicode literals
    * and will write an output file to STDOUT (or to the `--output-file`)
    * in the TOML format (or INI format with `--write-ini`)
    * will show all parens around manifest parser expressions (with `--debug-expr`)

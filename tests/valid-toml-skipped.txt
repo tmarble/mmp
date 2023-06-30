@@ -1,0 +1,4 @@
+./tests/valid/key/space.toml
+
+Currently we don't preserve the whitespace outside of table keys
+_std_table_open _std_table_close
