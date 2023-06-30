@@ -136,8 +136,8 @@ skip-if = true
 [browser_test_focus_dialog.js]
 [browser_test_focus_urlbar.js]
 skip-if = '''
-  os == "linux"|| # Bug 1782783
-  os == "win" '''  # Bug 1818994
+  os == "linux" ||
+  os == "win" '''  # Bug 1782783 # Bug 1818994
 [browser_test_panel.js]
 [browser_test_scrolling.js]
 [browser_test_selection_urlbar.js]
