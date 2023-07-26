@@ -9,7 +9,7 @@ import os.path
 import re
 import sys
 
-from typing import List, TextIO, Any, Pattern, Tuple
+from typing import List, TextIO, Any, Pattern, Tuple, Dict
 from attrs import define, field, validators
 from lark import Lark, Transformer, Tree, Token
 from lark import v_args # type: ignore
@@ -59,6 +59,17 @@ class IRToken(Token): # type: ignore
             return v.replace('\n', '')
         return v
 
+    def pretty_prefs_quote(self) -> str:
+        if self.mmp.write_toml:
+            return str(self)
+        return ''
+
+    def pretty_ws_ini_newline(self) -> str:
+        value = str(self)
+        if self.mmp.write_toml:
+            value = value.replace('\n', '')
+        return value
+
     def _pretty(self, _level: int): # type: ignore
         if self.type == 'basic_string':
             yield self.pretty_basic_string()
@@ -74,6 +85,10 @@ class IRToken(Token): # type: ignore
             yield self.pretty_unquoted_string()
         elif self.type == 'ws_unquoted_string_val':
             yield self.pretty_ws_unquoted_string_val()
+        elif self.type == 'ws_ini_newline':
+            yield self.pretty_ws_ini_newline()
+        elif self.type == 'prefs_quote':
+            yield self.pretty_prefs_quote()
         else: # self.type == 'unquoted_key':
             yield str(self)
 
@@ -85,7 +100,7 @@ class IRTree(Tree): # type: ignore
     mmp: Any = None
     array_values: List[Any] = []
 
-    def _hoist_comments(self, children: List[Any]) -> str:
+    def _hoist_comments(self, children: List[Any], remove_newlines: bool=False) -> str:
         """
         Hoist comments from this tree (to remove them from the mp_expr when printed as TOML)
         """
@@ -95,7 +110,7 @@ class IRTree(Tree): # type: ignore
         for c in range(len(children)): # type: ignore
             child = children[c] # type: ignore
             if isinstance(child, IRTree):
-                comments += self._hoist_comments(child.children) # type: ignore
+                comments += self._hoist_comments(child.children, remove_newlines) # type: ignore
             if isinstance(child, IRToken) and (child.type == 'ws_comment_newline' or child.type == 'ws_comment_newline1'):
                 value: str = str(child)
                 start: int = 0
@@ -107,7 +122,8 @@ class IRTree(Tree): # type: ignore
                         (i, j) = m.span()
                         if i > start:
                             content += value[start:i]
-                        content += '\n'
+                        if not remove_newlines:
+                            content += '\n'
                         comment = value[i:j]
                         comments += ' ' + comment
                         start = j + 1
@@ -117,6 +133,14 @@ class IRTree(Tree): # type: ignore
                 if changed: # update child WITHOUT the comment
                     children[c] = IRToken(child.type, content, self.mmp) # type: ignore
         return comments
+
+    def pretty_dotted_key(self, level: int, children: Any): # type: ignore
+        if self.mmp.write_toml:
+            yield "'"
+        for child in children: # type: ignore
+            yield from child._pretty(level) # type: ignore
+        if self.mmp.write_toml:
+            yield "'"
 
     def pretty_mp_expr(self, level: int): # type: ignore
         simple_token: bool = False
@@ -150,7 +174,10 @@ class IRTree(Tree): # type: ignore
     def _pretty(self, level: int, _indent_str: str = ''): # type: ignore
         if self.data == 'std_table' or self.data == 'mp_table':
             yield '['
-            yield from self.table_key._pretty(level) # type: ignore
+            if not self.mmp.keep_dotted and isinstance(self.table_key, IRTree) and isinstance(self.table_key.children[0], IRTree) and self.table_key.children[0].data == 'dotted_key': # type: ignore
+                yield from self.pretty_dotted_key(level, self.table_key.children[0].children) # type: ignore
+            else:
+                yield from self.table_key._pretty(level) # type: ignore
             yield ']'
         elif self.data == 'array':
             yield '['
@@ -159,7 +186,7 @@ class IRTree(Tree): # type: ignore
             yield ']'
         elif self.data == 'implicit_array':
             if self.mmp.write_toml:
-                yield'['
+                yield ' ['
             seen_val: bool = False
             for child in self.children: # type: ignore
                 if seen_val and self.mmp.write_toml:
@@ -173,6 +200,7 @@ class IRTree(Tree): # type: ignore
         elif self.data == 'mp_expr':
             yield from self.pretty_mp_expr(level) # type: ignore
         elif self.data == 'unquoted_string_val' and self.mmp.write_toml: # write children in reverse order
+            yield ' '
             for child in reversed(self.children): # type: ignore
                 yield from child._pretty(level) # type: ignore
         else:
@@ -234,7 +262,7 @@ class IRTransformer(Transformer): # type: ignore
                     else:
                         children.append(arg) # type: ignore
                 else:
-                    children.append(IRToken(arg.type, arg, self.mmp)) # type: ignore
+                    children.append(IRToken(arg.type, str(arg), self.mmp)) # type: ignore
         return children # type: ignore
 
     def _tree(self, args: Tuple[Any], children: List[Any] | None = None) -> IRTree:
@@ -245,6 +273,142 @@ class IRTransformer(Transformer): # type: ignore
         tree = IRTree(rule, children)
         tree.mmp = self.mmp
         return tree
+
+    def _val_should_not_be_mp_expr(self, args: Tuple[Any]) -> bool:
+        # self.mmp.err('  _val_should_not_be_mp_expr')
+        if isinstance(args[2], IRTree) and args[2].data == 'val': # type: ignore
+            # self.mmp.err('  is a val')
+            if len(args[2].children) == 1 and isinstance(args[2].children[0], IRTree) and args[2].children[0].data == 'mp_expr': # type: ignore
+                # self.mmp.err('  is an mp_expr')
+                if isinstance(args[0], Tree) and args[0].data == 'key' and len(args[0].children) == 1 and isinstance(args[0].children[0], IRToken) and args[0].children[0].type == 'unquoted_key' and args[0].children[0].endswith('-if'): # type: ignore
+                    # self.mmp.err('  is an mp_expr key ending in -if')
+                    self.mmp.read_toml = False # we found a *-if keyval, thus we preserve the mp_expr
+                else:
+                    return True # convert from mp_expr to unquoted_string or implicit_array
+        return False
+
+    def _convert_mp_expr(self, children: List[Any], ia: Tree[Any] | None=None) -> Tree[Any]:
+        if ia == None:
+            ia = IRTree('implicit_array', [])
+            ia.mmp = self.mmp
+            ia = self._convert_mp_expr(children[2].children, ia) # type: ignore
+            if len(ia.children) == 1: # type: ignore
+                # singleton value
+                iav = ia.children[0]
+                if self.mmp.write_toml:
+                    comments: str = iav._hoist_comments(iav.children, True) # type: ignore
+                    if len(comments) > 0: # type: ignore
+                        iav.children.append(IRToken('ws_comment_newline', comments, self.mmp)) # type: ignore
+                for child in iav.children: # type: ignore
+                    if isinstance(child, IRToken):
+                        if child.type == 'alpha_unquoted_key': # type: ignore
+                            # unquoted keys need to be quoted in TOML values
+                            child.type = 'unquoted_string' # type: ignore
+                        elif child.type.startswith('ws') and child.find('\n') >= 0:
+                            child.type = 'ws_ini_newline' # remove newlines for TOML
+                children[2].children = iav.children # type: ignore
+            else:
+                children[2].children = [ia]
+            keyval = IRTree('keyval', children)
+            keyval.mmp = self.mmp
+            return keyval
+        iav = IRTree('implicit_array_value', [])
+        iav.mmp = self.mmp
+        if len(children) == 1 and isinstance(children[0], IRTree) and children[0].data == 'prefs_keyval': # type: ignore
+            # handle prefs_keyval
+            wschar: IRToken = children[0].children[0] # type: ignore
+            wschar.type = 'ws_comment_newline'
+            iav.children.append(wschar) # type: ignore
+            iav.children.append(IRToken('prefs_quote', '"', self.mmp)) # type: ignore
+            iav.children.append(children[0].children[1]) # type: ignore
+            iav.children.append(children[0].children[2]) # type: ignore
+            iav.children.append(children[0].children[3]) # type: ignore
+            iav.children.append(IRToken('prefs_quote', '"', self.mmp)) # type: ignore
+            ia.children.insert(0, iav)
+        elif len(children) == 1 and isinstance(children[0], IRToken):
+            # handle simple token
+            token: IRToken = children[0] # type: ignore
+            iav.children.append(token) # type: ignore
+            ia.children.insert(0, iav)
+        elif len(children) == 2 and isinstance(children[0], IRTree) and children[0].data == 'mp_not' and isinstance(children[1], IRToken): # type: ignore
+            # handle mp_not token
+            token: IRToken = children[1] # type: ignore
+            token = IRToken(token.type, '!' + token, self.mmp) # type: ignore
+            iav.children.append(token) # type: ignore
+            ia.children.insert(0, iav)
+        else:
+            # review the children in reverse order
+            for i in reversed(range(len(children))):
+                child = children[i]
+                if isinstance(child, IRTree):
+                    if child.data == 'mp_expr':
+                        ia = self._convert_mp_expr(child.children, ia) # type: ignore
+                    else:
+                        raise Exception(f'unexpected child of mp_expr: {child.__repr__()}')
+                elif child.type == 'mp_logical_implicit':
+                    pass # ignore
+                elif child.type == 'ws_comment_newline1':
+                    # add to the first iav
+                    if len(ia.children) > 0:
+                        iav = ia.children[0]
+                        iav.children.insert(0, child)
+                    else:
+                        raise Exception(f'unexpected token at the end of an mp_expr: {child.__repr__()}')
+                elif child.type == 'mp_not':
+                    # add to the first TOKEN in iav
+                    if len(ia.children) > 0:
+                        iav = ia.children[0]
+                        if len(iav.children) > 0 and isinstance(iav.children[0], IRToken):
+                            iav.children[0] = IRToken(iav.children[0].type, '!' + iav.children[0], self.mmp) # type: ignore
+                        else:
+                            raise Exception(f'unexpected mp_not at the end of an mp_expr: {child.__repr__()}')
+                    else:
+                        raise Exception(f'unexpected token at the end of an mp_expr: {child.__repr__()}')
+                else:
+                    raise Exception(f'unexpected token in mp_expr: {child.__repr__()}')
+        return ia # type: ignore
+
+    def _val_should_be_unquoted_string(self, args: Tuple[Any]) -> bool:
+        if isinstance(args[2], IRTree) and args[2].data == 'val': # type: ignore
+            if len(args[2].children) == 1 and isinstance(args[2].children[0], IRTree) and args[2].children[0].data == 'implicit_array': # type: ignore
+                uq_keys = {
+                    'disabled': True,
+                    'reason': True,
+                    'run-sequentially': True,
+                    'tags': True, }
+                if isinstance(args[0], Tree) and args[0].data == 'key' and len(args[0].children) == 1 and isinstance(args[0].children[0], IRToken) and args[0].children[0].type == 'unquoted_key' and args[0].children[0] in uq_keys: # type: ignore
+                    return True # convert from implicit_array to unquoted_string
+        return False
+
+    def _convert_unquoted_string(self, args: List[Any]) -> Tree[Any]:
+        ia = args[2].children[0] # type: ignore
+        unquoted_string = ''
+        unquoted_start = ''
+        for child in ia.children:
+            if unquoted_string is None:
+                break
+            if isinstance(child, IRTree) and child.data == 'implicit_array_value':
+                for token in child.children: # type: ignore
+                    if unquoted_string is None:
+                        break
+                    if isinstance(token, IRToken): # type: ignore
+                        if token.type == 'alpha_unquoted_key' or token.type == 'unquoted_string':
+                            unquoted_string += str(token)
+                        elif token.type.startswith('ws'):
+                            if len(unquoted_string) > 0:
+                                unquoted_string += str(token)
+                            else:
+                                unquoted_start = str(token)
+                        else:
+                            unquoted_string = None
+                    else:
+                        unquoted_string = None
+            else:
+                unquoted_string = None
+        if unquoted_string is not None:
+            args[2].children = [IRToken('ws_comment_newline1', unquoted_start, self.mmp),
+                                IRToken('unquoted_string', unquoted_string, self.mmp)] # type: ignore
+        return self._tree(args) # type: ignore
 
     def alpha(self, args: Tuple[Any]) -> Token:
         return self._token(args, '', False)
@@ -459,7 +623,15 @@ class IRTransformer(Transformer): # type: ignore
         return self._tree(args)
 
     def keyval(self, args: Tuple[Any]) -> Tree[Any]:
-        return self._tree(args)
+        rule: str = sys._getframe().f_code.co_name # type: ignore
+        self._debug_args(args, rule)
+        if self._val_should_not_be_mp_expr(args):
+            tree = self._convert_mp_expr(list(args))
+            if self._val_should_be_unquoted_string(tree.children): # type: ignore
+                tree = self._convert_unquoted_string(tree.children) # type: ignore
+        else:
+            tree = self._tree(args)
+        return tree
 
     def keyval_sep(self, args: Tuple[Any]) -> Token:
         return self._token_combine(args, False)
@@ -533,18 +705,21 @@ class IRTransformer(Transformer): # type: ignore
     def mp_expr(self, args: Tuple[Any]) -> Tree[any]: # type: ignore
         rule: str = sys._getframe().f_code.co_name # type: ignore
         self._debug_args(args, rule)
-        self.mmp.read_toml = False # Illegal TOML syntax found
+        # NOTE: will defer final type of mp_expr when resolved as a keyval
+        # self.mmp.read_toml = False # Illegal TOML syntax found
         tree: IRTree = IRTree(rule, [], None)
         tree.mmp = self.mmp
         if len(args) == 3 and isinstance(args[0], Tree) and args[0].data == 'mp_expr':
             # IMPLICIT OR
-            args.insert(1, IRToken('mp_logical_implicit', ' ||', self.mmp)) # type: ignore
-        for arg in args:
-            if arg:
-                if isinstance(arg, Token) and arg.type == 'ws_comment_newline' and len(arg) == 0:
-                    pass
-                else:
-                    tree.children.append(arg) # type: ignore
+            tree.children = list(args)
+            tree.children.insert(1, IRToken('mp_logical_implicit', ' ||', self.mmp)) # type: ignore
+        else:
+            for arg in args:
+                if arg:
+                    if isinstance(arg, Token) and arg.type == 'ws_comment_newline' and len(arg) == 0:
+                        pass
+                    else:
+                        tree.children.append(arg) # type: ignore
         return tree
 
     def mp_op(self, args: Tuple[Any]) -> Token:
@@ -585,6 +760,9 @@ class IRTransformer(Transformer): # type: ignore
 
     def plus(self, args: Tuple[Any]) -> Token:
         return self._token(args, '+', False)
+
+    def prefs_keyval(self, args: Tuple[Any]) -> Tree[Any]:
+        return self._tree(args)
 
     def rparen(self, args: Tuple[Any]) -> Token:
         return self._token(args, '', False)
@@ -689,23 +867,25 @@ class MetaManifestParser:
                                 member_validator=validators.instance_of(type=str),
                                 iterable_validator=validators.instance_of(type=list)),
                             default=['mmp.py'])
-    debug_expr: bool = field(validator=validators.instance_of(type=bool), default=False) # input must be legal TOML
+    debug_expr: bool = field(validator=validators.instance_of(type=bool), default=False) # type: ignore
     errfile: TextIO = field(default=sys.stderr)
-    fix_implicit: bool = field(validator=validators.instance_of(type=bool), default=False) # input must be legal TOML
-    ignore_includes: bool = field(validator=validators.instance_of(type=bool),
+    fix_implicit: bool = field(validator=validators.instance_of(type=bool), default=False) # type: ignore
+    ignore_includes: bool = field(validator=validators.instance_of(type=bool), # type: ignore
                                   default=False)
-    ir_ebnf: str = field(validator=validators.instance_of(type=str),
-                         default='')
+    ini_files: Dict[str, bool] = field(default={}) # type: ignore
+    ir_ebnf: str = field(validator=validators.instance_of(type=str), # type: ignore
+                         default='') # type: ignore
+    keep_dotted: bool = field(validator=validators.instance_of(type=bool), default=False) # type: ignore
     match: str = field(default='(mochitest|chrome|a11y|browser|xpcshell)\x2Eini')
     regex: Pattern[str] = field(default=None)
-    read_toml: bool = field(validator=validators.instance_of(type=bool), default=True) # file read is legal TOML
+    read_toml: bool = field(validator=validators.instance_of(type=bool), default=True) # type: ignore
     outfile: TextIO = field(default=sys.stdout)
-    topsrcdir: str = field(validator=validators.instance_of(type=str),
+    topsrcdir: str = field(validator=validators.instance_of(type=str), # type: ignore
                            default='')
-    verbose: bool = field(validator=validators.instance_of(type=bool),
+    verbose: bool = field(validator=validators.instance_of(type=bool), # type: ignore
                           default=False)
-    strict_toml: bool = field(validator=validators.instance_of(type=bool), default=False) # input must be legal TOML
-    write_toml: bool = field(validator=validators.instance_of(type=bool), default=True) # file to write is legal TOML
+    strict_toml: bool = field(validator=validators.instance_of(type=bool), default=False) # type: ignore
+    write_toml: bool = field(validator=validators.instance_of(type=bool), default=True) # type: ignore
 
     def out(self, a: Any, end: str = '\n') -> None:
         "Print to outfile (STDOUT)"
@@ -716,10 +896,10 @@ class MetaManifestParser:
 
     def err(self, a: Any) -> None:
         "Print to error file (STDERR)"
-        print(a, file=self.errfile)
+        print(a, file=self.errfile) # type: ignore
 
     def err2(self, a: Any, b: Any) -> None:
-        print(a, b, file=self.errfile)
+        print(a, b, file=self.errfile) # type: ignore
 
     def verr(self, a: Any) -> None:
         "Print to error file (STDERR) if in verbose mode"
@@ -740,6 +920,9 @@ class MetaManifestParser:
             else:
                 self.argv = sys.argv
         sys.argv = self.argv
+        topsrcdir: str = '.'
+        if 'MOZILLA_CENTRAL' in os.environ:
+            topsrcdir: str = os.environ['MOZILLA_CENTRAL']
         parser = argparse.ArgumentParser('Meta Manifest Parser')
         # OPTIONS ----------------------------------------
         parser.add_argument('-v', '--verbose',
@@ -762,6 +945,9 @@ class MetaManifestParser:
                             action='store_true', required=False)
         parser.add_argument('-j', '--ignore-includes',
                             help='Ignore ini files that include other ini files',
+                            action='store_true', required=False)
+        parser.add_argument('-k', '--keep-dotted',
+                            help='Preserve dotted keys in table names',
                             action='store_true', required=False)
         parser.add_argument('-m', '--match',
                             help=f'file match regex [{self.match}]',
@@ -786,6 +972,7 @@ class MetaManifestParser:
         self.strict_toml = args.strict_toml
         self.debug_expr = args.debug_expr
         self.fix_implicit = args.fix_implicit
+        self.keep_dotted = args.keep_dotted
         if args.output_file:
             self.outfile = open(file=args.output_file, mode='w')
         if self.verbose:
@@ -797,6 +984,7 @@ class MetaManifestParser:
             self.err(f'strict-toml: {self.strict_toml}')
             self.err(f'debug-expr: {self.debug_expr}')
             self.err(f'fix-implicit: {self.fix_implicit}')
+            self.err(f'keep-dotted: {self.keep_dotted}')
         if not self.validate_topsrcdir(args.topsrcdir):
             self.err(f'topsrcdir invalid: "{args.topsrcdir}"')
             rc = 1
@@ -875,19 +1063,42 @@ class MetaManifestParser:
         file.close()
         return text
 
-    def is_include(self, fullpath: str) -> bool:
+    def check_for_includes(self, path: str, indent: int=0) -> None:
         """
-        Returns True if fullpath includes a section `[include`
+        Prints fullpath if it includes a section `[include`
+        Then recursively follows include path.
         """
-        ini: str | None = self.read_file_as_string(fullpath)
+        ini: str | None = self.read_file_as_string(os.path.join(self.topsrcdir, path))
         if ini == None:
-            return False
-        return ini.find('[include:') >= 0
+            return
+        pad = '  ' * indent
+        if ini.find('[include:') >= 0:
+            self.ini_files[path] = True
+            self.verr(f'{pad}INCLUDES found in {path}:')
+            regex = '\\[include:([^\\]]+)\\]'
+            rx = re.compile(regex, re.MULTILINE)
+            start: int = 0
+            while start < len(ini):
+                m = rx.search(ini, start)
+                if m:
+                    (i, j) = m.span()
+                    if i >= start:
+                        include_filename = ini[i+9:j-1]
+                        self.verr(f'{pad}INCLUDE={include_filename}=')
+                        include_path = os.path.join(os.path.dirname(path), include_filename)
+                        include_path = os.path.realpath(include_path)
+                        include_path = '.' + include_path[len(self.topsrcdir):] # make path relative
+                        self.ini_files[include_path] = True
+                        self.check_for_includes(include_path, indent+1)
+                    start = j + 1
+                else:
+                    break
 
     def find_ini(self) -> bool:
         """
         Prints relative path of each matching *.ini file
         """
+        self.ini_files = {}
         for root, _dirs, files in os.walk(self.topsrcdir, topdown=True):
             for file in files:
                 if file.endswith('.ini'):
@@ -895,9 +1106,11 @@ class MetaManifestParser:
                     path = '.' + fullpath[len(self.topsrcdir):] # make path relative
                     if not path.startswith('./obj-'): # ignore build directories
                         if self.regex.fullmatch(file):
-                            self.out(path)
-                        elif not self.ignore_includes and self.is_include(fullpath):
-                            self.out(path)
+                            self.ini_files[path] = True
+                        if not self.ignore_includes:
+                            self.check_for_includes(path)
+        for f in sorted(self.ini_files.keys()):
+            self.out(f)
         return True
 
     def initialize_parser(self) -> bool:

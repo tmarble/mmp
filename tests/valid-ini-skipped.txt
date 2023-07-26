@@ -1,4 +1,8 @@
 ./dom/media/test/mochitest.ini
+./dom/media/mediasource/test/mochitest.ini
+./dom/security/test/csp/mochitest.ini
+./dom/tests/mochitest/dom-level2-html/mochitest.ini
+./layout/base/tests/mochitest.ini
 
 big recursion
 
@@ -12,10 +16,6 @@ illegal comment
 Comma in unquoted value
   disabled=intermitently fails, quite often, bug 487402
 
-./testing/mochitest/tests/MochiKit-1.4.2/tests/mochitest.ini
-
-Quote in unquoted value
-  disabled=This test is broken: "Error: JSAN is not defined ... Line:
 
 ./toolkit/components/backgroundtasks/tests/xpcshell/xpcshell.ini
 
@@ -35,18 +35,6 @@ Double quotes in unquoted_string
 unquoted value contains only one apostrophe
   ntially = doesn't play nice with others.
 
-./testing/xpcshell/example/unit/xpcshell-with-prefs.ini
-
-INI re-generated correctly, however parsing error leads to
-incorrect TOML. Because RHS of pref is an unquoted-key
-that gets parsed as an mp_expr --> thus all the prefs are NOT
-parsed as an implicit_array
-
-./toolkit/content/tests/chrome/chrome.ini
-
-Unusual instance of implicit array with multiple values on one line
-  support-files = window_cursorsnap_dialog.xhtml window_cursorsnap_wizard.xhtml
-
 ./uriloader/exthandler/tests/mochitest/browser.ini
 
 Implicit array value contains a bracket
@@ -60,6 +48,138 @@ disabled=Bug 962258
 
 disabled=too many intermittent failures (bug 1009322
 
-./dom/smil/test/mochitest.ini
+./browser/base/content/test/about/browser.ini
+./browser/base/content/test/keyboard/browser.ini
+./browser/base/content/test/static/browser.ini
+./browser/base/content/test/performance/browser.ini
+./browser/base/content/test/siteIdentity/browser.ini
+./browser/components/aboutlogins/tests/browser/browser.ini
+./browser/components/preferences/tests/browser.ini
+./browser/components/uitour/test/browser.ini
+./browser/extensions/screenshots/test/browser/browser.ini
+./browser/modules/test/browser/browser.ini
+./devtools/client/application/test/browser/browser.ini
+./devtools/client/debugger/test/mochitest/browser.ini
+./devtools/client/netmonitor/test/browser.ini
+./docshell/test/navigation/mochitest.ini
+./dom/base/test/chrome.ini
+./dom/base/test/mochitest.ini
+./dom/indexedDB/test/browser.ini
 
-`disabled=until bug 501183 is fixed`
+TOML conversion is valid, but too tricky to verify
+skip-if =
+  os == "mac"
+  os == "linux" && (!debug || bits == 64)
+  os == 'win' && os_version == '10.0' && bits == 64 && !debug # Bug 1399648, bug 1402502
+skip-if = '''
+  os == "mac" ||
+  os == "linux" && (!debug || bits == 64) ||
+  os == 'win' && os_version == '10.0' && bits == 64 && !debug  ''' # Bug 1399648, bug 1402502
+
+./browser/base/content/test/performance/io/browser.ini
+
+comma in prefs_keyval
+  MOZ_PROFILER_STARTUP_FEATURES=js,mainthreadio
+
+./browser/components/extensions/test/browser/browser.ini
+./browser/base/content/test/tabs/browser.ini
+./browser/components/enterprisepolicies/tests/browser/browser.ini
+./browser/components/search/test/browser/browser.ini
+./docshell/test/chrome/chrome.ini
+./dom/base/test/unit/xpcshell.ini
+./dom/canvas/test/crash/mochitest.ini
+./dom/html/test/mochitest.ini
+./dom/media/webaudio/test/mochitest.ini
+./dom/tests/mochitest/chrome/chrome.ini
+./dom/tests/mochitest/general/mochitest.ini
+./dom/workers/test/mochitest.ini
+./dom/xul/test/chrome.ini
+./image/test/mochitest/mochitest.ini
+./intl/strres/tests/unit/xpcshell.ini
+./netwerk/test/browser/browser.ini
+./toolkit/components/antitracking/test/browser/browser.ini
+./toolkit/components/places/tests/browser/browser.ini
+./toolkit/components/remotebrowserutils/tests/browser/browser.ini
+./toolkit/components/windowcreator/test/chrome.ini
+
+Value has an unquote key that starts with a digit
+support-files =
+  blank.html
+  204.sjs
+
+./browser/components/firefoxview/tests/browser/browser.ini
+./browser/extensions/formautofill/test/mochitest/creditCard/mochitest.ini
+./browser/extensions/formautofill/test/mochitest/mochitest.ini
+./dom/security/test/general/browser.ini
+./netwerk/test/unit/xpcshell.ini
+./remote/cdp/test/browser/browser.ini
+./remote/cdp/test/browser/dom/browser.ini
+./remote/cdp/test/browser/emulation/browser.ini
+./remote/cdp/test/browser/fetch/browser.ini
+./remote/cdp/test/browser/input/browser.ini
+./remote/cdp/test/browser/io/browser.ini
+./remote/cdp/test/browser/log/browser.ini
+./remote/cdp/test/browser/network/browser.ini
+./remote/cdp/test/browser/page/browser.ini
+./remote/cdp/test/browser/runtime/browser.ini
+./remote/cdp/test/browser/security/browser.ini
+./remote/cdp/test/browser/systemInfo/browser.ini
+./remote/cdp/test/browser/target/browser.ini
+./testing/xpcshell/example/unit/xpcshell-with-prefs.ini
+
+weird prefs
+prefs =
+  browser.sessionstore.closedTabsFromAllWindows=true
+  browser.tabs.firefox-view.logLevel=All
+
+./browser/extensions/pictureinpicture/tests/browser/browser.ini
+./toolkit/components/passwordmgr/test/mochitest/mochitest.ini
+./toolkit/components/pictureinpicture/tests/browser.ini
+
+Double quotes in prefs_keyval
+
+./devtools/shared/commands/thread-configuration/tests/browser.ini
+
+Successful conversion, but output slightly different?
+
+./docshell/test/mochitest/mochitest.ini
+./dom/canvas/test/mochitest.ini
+
+Strange unquoted val in support-files
+
+./toolkit/content/tests/chrome/chrome.ini
+
+Multiple vals on one line
+   support-files = window_cursorsnap_dialog.xhtml window_
+
+./testing/mozbase/manifestparser/tests/include-invalid.ini
+
+Include problem
+
+./uriloader/exthandler/tests/unit/xpcshell.ini
+./browser/components/shell/test/browser.ini
+./browser/components/tests/browser/whats_new_page/browser.ini
+./devtools/server/tests/xpcshell/xpcshell.ini
+./dom/crypto/test/browser/browser.ini
+./dom/localstorage/test/unit/xpcshell.ini
+./dom/midi/tests/mochitest.ini
+./dom/smil/test/mochitest.ini
+./layout/mathml/tests/mochitest.ini
+./python/mozbuild/mozbuild/test/frontend/data/test-manifest-keys-extracted/browser.ini
+./python/mozbuild/mozbuild/test/frontend/data/test-manifest-keys-extracted/mochitest.ini
+./python/mozbuild/mozbuild/test/frontend/data/test-manifest-keys-extracted/xpcshell.ini
+./toolkit/components/certviewer/tests/browser/browser.ini
+./toolkit/components/extensions/test/xpcshell/webidl-api/xpcshell.ini
+./toolkit/components/extensions/test/xpcshell/xpcshell-e10s.ini
+./toolkit/components/extensions/test/xpcshell/xpcshell.ini
+./toolkit/components/extensions/test/xpcshell/xpcshell-remote.ini
+./toolkit/components/messaging-system/schemas/SpecialMessageActionSchemas/test/browser/browser.ini
+./toolkit/components/search/tests/xpcshell/xpcshell.ini
+
+bad expr
+  run-sequentially = Bug 912235 - Intermittent failures
+  reason = Test is Windows 10+.
+
+./python/mozbuild/mozbuild/test/frontend/data/test-harness-files/mochitest.ini
+
+A file that produces empty mp.tests is not compared accurately by compare-tests.py

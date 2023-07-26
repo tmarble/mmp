@@ -46,6 +46,7 @@ options:
   -T, --strict-toml     Will fail if input is not valid TOML
   -j, --ignore-includes
                         Ignore ini files that include other ini files
+  -k, --keep-dotted     Preserve dotted keys in table names
   -m MATCH, --match MATCH
                         file match regex [(mochitest|chrome|a11y|browser|xpcshell).ini]
   -o OUTPUT_FILE, --output-file OUTPUT_FILE
@@ -142,6 +143,15 @@ skip-if = '''
 [browser_test_scrolling.js]
 [browser_test_selection_urlbar.js]
 [browser_test_textcaret.js]
+```
+### Example 4: Convert one or more .ini files in the tree to TOML
+
+```
+$ cd $MOZILLA_CENTRAL
+$ ini2toml ./testing/mochitest/baselinecoverage/browser_chrome/browser.ini
+./testing/mochitest/baselinecoverage/browser_chrome/browser.ini
+  ./testing/mochitest/baselinecoverage/browser_chrome/browser.toml
+$
 ```
 
 ## Documentation

@@ -48,6 +48,8 @@ simple_key: quoted_key | unquoted_key
 //  /A-Za-z0-9_-/ //
 unquoted_key: ( ALPHA | DIGIT | minus | underscore )+ // A-Z | a-z | 0-9 | - | _
 
+alpha_unquoted_key: ALPHA unquoted_key
+
 !minus: "\x2D"
 !underscore: /_/ // "\x5F"
 
@@ -60,17 +62,14 @@ keyval_sep: ws equals ws // =
 
 //TOML: inline_table not implemented for val
 
-val: boolean | date_time | float | integer | string | array | implicit_array | unquoted_string_val | mp_expr
+val: boolean | date_time | float | integer | string | array | mp_expr
 
 // String
 
 string.40: ml_basic_string | basic_string | ml_literal_string | literal_string
 
-unquoted_string_val.10: ws_comment_newline unquoted_string //INI
-
 //INI note handle and preserve single quotes for prefs values
-unquoted_string: ( ALPHA | DIGIT | unquoted_char )+ //INI
-               | ( ALPHA | DIGIT | unquoted_char )+  equals [ /'/ ] ( ALPHA | DIGIT | unquoted_char )+ [ /'/ ]
+unquoted_string: ( ALPHA | unquoted_char )  ( ALPHA | DIGIT | unquoted_char )+ //INI
 
 !equals: "="
 !unquoted_char: ( "?" | ":" | "/" | "-" | "+" | "_" | "." | "!" | "*" | "-" | "^" | "," | "<" | ">" | "{" | "}" | "@" ) //INI
@@ -118,12 +117,12 @@ _APOSTROPHE: "\x27" // '
 
 // Multiline Literal String
 
- ml_literal_string.42: _ml_literal_string_delim [ newline ] ml_literal_body _ml_literal_string_delim
- _ml_literal_string_delim: _APOSTROPHE _APOSTROPHE _APOSTROPHE
- ml_literal_body: mll_content* ( mll_quotes mll_content+ )* [ mll_quotes ]
+ml_literal_string.42: _ml_literal_string_delim [ newline ] ml_literal_body _ml_literal_string_delim
+_ml_literal_string_delim: _APOSTROPHE _APOSTROPHE _APOSTROPHE
+ml_literal_body: mll_content* ( mll_quotes mll_content+ )* [ mll_quotes ]
 
- mll_content: literal_char | newline
- !mll_quotes: _APOSTROPHE [ _APOSTROPHE ]
+mll_content: literal_char | newline
+!mll_quotes: _APOSTROPHE [ _APOSTROPHE ]
 
 // Integer
 
@@ -225,10 +224,7 @@ ws_comment_newline.6: ( WSCHAR | [ comment ] newline )*
 
 // Implict Array INI
 
-ws_comment_newline1.8: ( WSCHAR | [ comment ] newline )+ // at least one ws is required
-
-implicit_array.20: ws_comment_newline1 unquoted_string implicit_array // INI
-                 | ws_comment_newline1 unquoted_string ws_comment_newline1 unquoted_string
+ws_comment_newline1.8: ( WSCHAR+ | [ comment ] newline )+ // at least one ws is required
 
 // Table
 
@@ -273,17 +269,19 @@ HEXDIG: DIGIT | "a" | "b" | "c" | "d" | "e" | "f" | "A" | "B" | "C" | "D" | "E" 
 
 //INI Manifest Parser expression
 
-mp_expr.0: ws_comment_newline1 mp_expr // INI, 2
+mp_expr.5: ws_comment_newline1 mp_expr // INI, 2
          | lparen ws_comment_newline mp_expr ws_comment_newline rparen // 5
          | mp_not ws_comment_newline mp_expr // 3
          | mp_expr ws mp_logical ws mp_expr // 5
-         | mp_expr ws_comment_newline mp_expr // 3
-         | (mp_expr | mp_terminal) ws_comment_newline mp_op ws_comment_newline (mp_expr | mp_terminal) // 5
+         | mp_expr ws_comment_newline1 mp_expr // 3
+         | (mp_expr | mp_terminal) ws_comment_newline mp_op ws_comment_newline ( mp_expr | mp_terminal ) // 5
+         | prefs_keyval
          | alpha_unquoted_key
+         | unquoted_string
 
-alpha_unquoted_key: ALPHA unquoted_key
+mp_terminal.15: integer | string | boolean
 
-mp_terminal.0: integer | string | boolean
+prefs_keyval: WSCHAR+ key equals val //NEW
 
 !lparen: "("
 !rparen: ")"

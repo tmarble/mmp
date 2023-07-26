@@ -40,7 +40,7 @@ for file in $(cat $files); do
     echo $file
     debug="$build/output.err"
     output="$build/output.toml"
-    if ! mmp.py -v -T -r "$TOML_TEST/$file" -o "$output" > "$debug" 2>&1 ; then
+    if ! mmp.py -v --keep-dotted --strict-toml -r "$TOML_TEST/$file" -o "$output" > "$debug" 2>&1 ; then
         echo "FAILED"
         exit 1
     fi

@@ -20,7 +20,7 @@ if [ ! -e "$files" ]; then
         exit 1
     fi
     mv "$files" "$files.orig"
-    sort "$files.orig" --output "$files"
+    sort -u "$files.orig" --output "$files"
     rm "$files.orig"
 fi
 
@@ -52,14 +52,37 @@ for file in $(cat $files); do
         echo "NOT SAME"
         exit 2
     fi
-    if ! mmp.py -r "$file" --fix-implicit -o "$toml" > "$debug" 2>&1 ; then
+    if ! mmp.py -v -r "$file" --fix-implicit -o "$toml" > "$debug" 2>&1 ; then
         echo "FAILED to write TOML"
         exit 1
     fi
-    if ! read-toml.py -r "$toml" > "$debug" 2>&1 ; then
-        echo "WROTE invalid TOML"
-        exit 1
+    # The following is for a simple "is this valid TOML" check
+    # if ! read-toml.py -r "$toml" > "$debug" 2>&1 ; then
+    #     echo "WROTE invalid TOML"
+    #     exit 1
+    # fi
+    # NOTE the following requires running in a venv with manifestparser
+    filebase="${file%%.ini}"
+    new_toml="${filebase}.toml"
+    debug="$build/compare-tests.err"
+    if [ -e "$new_toml" ]; then
+        echo "  SAVING $new_toml"
+        mv "$new_toml" "$new_toml.save"
+    fi
+    cp "$toml" "$new_toml"
+    rc=0
+    if ! compare-tests.py -v --compare -I "$file" -T "$new_toml" > "$debug" 2>&1 ; then
+        echo "MP tests output does not match"
+        rc=1
+    fi
+    rm "$new_toml"
+    if [ -e "$new_toml.save" ]; then
+        echo "  RESTORING $new_toml"
+        mv "$new_toml.save" "$new_toml"
+    fi
+    if [ $rc -gt 0 ]; then
+        exit $rc
     fi
     echo "$file" >> "$passed"
-    rm "$ini" "$toml" "$debug"
+    rm -f "$ini" "$toml" "$debug"
 done
