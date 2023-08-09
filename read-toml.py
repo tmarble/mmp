@@ -10,13 +10,16 @@ import sys
 
 from typing import List, TextIO, Any
 from attrs import define, field, validators
-from tomlkit import parse, dumps
+from tomlkit import parse, document, dumps
+from tomlkit.items import SingleKey, KeyType
 
 @define
 class ReadToml:
     """
     ReadToml is the main class for the read-toml.py program.
     """
+    alpha_sort: bool = field(validator=validators.instance_of(type=bool),
+                             default=False)
     argv: List[str] = field(validator=validators.deep_iterable(
                                 member_validator=validators.instance_of(type=str),
                                 iterable_validator=validators.instance_of(type=list)),
@@ -65,17 +68,23 @@ class ReadToml:
                             help='Prints details of each action',
                             action='store_true', required=False)
         parser.add_argument('-o', '--output-file',
-                            help=f'Write to file [STDOUT]',
+                            help='Write to file [STDOUT]',
                             default=None, required=False)
+        parser.add_argument('-s', '--alpha-sort',
+                            help='Alpha sort TOML sections (except DEFAULT)',
+                            action='store_true', required=False)
         # ACTIONS ----------------------------------------
         parser.add_argument('-r', '--read-toml',
-                            help=f'Read a TOML file',
+                            help='Read a TOML file',
                             default=None, required=False)
         args: argparse.Namespace = parser.parse_args()
         self.verbose = args.verbose
+        self.alpha_sort = args.alpha_sort
         if args.output_file:
             self.outfile = open(file=args.output_file, mode='w')
         if self.verbose:
+            self.err(f'alpha-sort: {self.alpha_sort}')
+            self.err(f'read-toml: {args.read_toml}')
             self.err(f'output-file: {"STDOUT" if self.outfile == sys.stdout else args.output_file}')
         if args.read_toml:
             rc = 0 if self.read_toml(args.read_toml) else 1
@@ -111,7 +120,19 @@ class ReadToml:
             return False
         try:
             manifest = parse(toml)
-            self.out(dumps(manifest))
+            if self.alpha_sort:
+                unsorted = manifest
+                manifest = document()
+                if 'DEFAULT' in unsorted:
+                    manifest.add('DEFAULT', unsorted['DEFAULT'])
+                sections = [k for k in unsorted.keys() if k != 'DEFAULT']
+                for k in sorted(sections):
+                    if k.find("'") >= 0:
+                        section = k
+                    else:
+                        section = SingleKey(k, KeyType.Literal)
+                    manifest.add(section, unsorted[k])
+            self.out(dumps(manifest), end='')
         except Exception as e:
             self.err(f'Error: {e}')
             return False

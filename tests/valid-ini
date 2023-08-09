@@ -14,14 +14,11 @@ mkdir -p "$build"
 
 if [ ! -e "$files" ]; then
     echo "creating list of all manifest parser ini files to consider"
-    if ! mmp.py --find-ini > "$files" ; then
+    if ! mmp.py --verbose --find-ini > "$files" ; then
         echo "Unable to create list of manifestparser files"
         rm "$files"
         exit 1
     fi
-    mv "$files" "$files.orig"
-    sort -u "$files.orig" --output "$files"
-    rm "$files.orig"
 fi
 
 if [ ! -e "$skipped" ]; then

@@ -183,3 +183,12 @@ bad expr
 ./python/mozbuild/mozbuild/test/frontend/data/test-harness-files/mochitest.ini
 
 A file that produces empty mp.tests is not compared accurately by compare-tests.py
+
+./testing/mochitest/manifests/emulator-jb.ini
+./testing/mochitest/tests/dom/media/test/mochitest.ini
+
+invalid include
+
+./testing/mochitest/tests/MochiKit-1.4.2/tests/mochitest.ini
+
+bad quote in val

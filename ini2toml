@@ -10,33 +10,41 @@ files=$*
 
 mkdir -p "$build"
 
+if [ -e "$files" ]; then
+  list="${files%%.txt}"
+  if [ "$list" != "$files" ]; then
+      # argument is a list of INI files
+      files=$(cat $files)
+  fi
+fi
+
 for file in $files; do
     echo $file
     new_toml="${file%%.ini}.toml"
     if [ -e "$new_toml" ]; then
-        echo "TOML file exists (skipping): $new_toml"
+        echo "    TOML file exists (skipping): $new_toml"
         continue
     fi
     debug="$build/output.err"
     ini="$build/output.ini"
     toml="${ini%%.ini}.toml"
-    if ! mmp.py -r "$file" -W -o "$ini" > "$debug" 2>&1 ; then
-        echo "FAILED to parse ini file: $file"
+    if ! mmp.py -v -r "$file" -W -o "$ini" > "$debug" 2>&1 ; then
+        echo "    FAILED to parse ini file: $file"
         exit 1
     fi
-    if ! diff -u "$MOZILLA_CENTRAL/$file" "$ini" ; then
-        echo "NOT SAME: could not recreate the ini file"
+    if ! diff --ignore-blank-lines -u "$MOZILLA_CENTRAL/$file" "$ini" ; then
+        echo "    NOT SAME: could not recreate the ini file"
         exit 2
     fi
-    if ! mmp.py -v -r "$file" --fix-implicit -o "$toml" > "$debug" 2>&1 ; then
-        echo "FAILED to write TOML"
+    if ! mmp.py -v -r "$file" --fix-implicit -o "$toml.raw" > "$debug" 2>&1 ; then
+        echo "    FAILED to write TOML"
         exit 1
     fi
-    if ! read-toml.py -r "$toml" > "$debug" 2>&1 ; then
-        echo "WROTE invalid TOML"
+    if ! read-toml.py --v --alpha-sort -r "$toml.raw" --output-file "$toml" > "$debug" 2>&1 ; then
+        echo "    WROTE invalid TOML"
         exit 1
     fi
     cp "$toml" "$new_toml"
-    echo "  $new_toml"
-    rm -f "$ini" "$toml" "$debug"
+    echo "    $new_toml"
+    rm -f "$ini" "$toml.raw" "$toml" "$debug"
 done

@@ -1162,7 +1162,7 @@ class MetaManifestParser:
             self.err('error: input is not strict TOML')
             return False
         self.verr(f"== PRETTY as TOML? {self.write_toml}==")
-        self.out(manifest.pretty(), end='') # type: ignore
+        self.out(manifest.pretty()) # type: ignore
         return True
 
 if __name__ == "__main__":
