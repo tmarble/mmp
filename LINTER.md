@@ -5,7 +5,8 @@ are required for Manifest Parser TOML files beyond being syntactically
 correct TOML.
 
 The implementation of the Manifest Parser Linter will be
-done as part of [Bug 1847580: Update ESLint to read .toml files rather than .ini for test manifests](https://bugzilla.mozilla.org/show_bug.cgi?id=1847580)
+done as part of <br/>
+[Bug 1847580: Update ESLint to read .toml files rather than .ini for test manifests](https://bugzilla.mozilla.org/show_bug.cgi?id=1847580)
 
 One challenge implementing this linter for Manifest Parser TOML files
 is that while all the TOML files in the tree must be syntatically valid,
@@ -26,7 +27,7 @@ See:
 
 ## Always includes a DEFAULT section
 
-Each MP TOML files should include a `[DEFAULT]` section, even if empty.
+Each MP TOML file should include a `[DEFAULT]` section, even if empty.
 
 ## All sections should be in alphabetical order
 
