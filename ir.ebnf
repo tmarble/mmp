@@ -270,11 +270,11 @@ HEXDIG: DIGIT | "a" | "b" | "c" | "d" | "e" | "f" | "A" | "B" | "C" | "D" | "E" 
 //INI Manifest Parser expression
 
 mp_expr.5: ws_comment_newline1 mp_expr // INI, 2
-         | lparen ws_comment_newline mp_expr ws_comment_newline rparen // 5
-         | mp_not ws_comment_newline mp_expr // 3
+         | lparen ws mp_expr ws rparen // 5
+         | mp_not ws mp_expr // 3
          | mp_expr ws mp_logical ws mp_expr // 5
          | mp_expr ws_comment_newline1 mp_expr // 3
-         | (mp_expr | mp_terminal) ws_comment_newline mp_op ws_comment_newline ( mp_expr | mp_terminal ) // 5
+         | (mp_expr | mp_terminal) ws mp_op ws ( mp_expr | mp_terminal ) // 5
          | prefs_keyval
          | alpha_unquoted_key
          | unquoted_string

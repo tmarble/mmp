@@ -42,7 +42,7 @@ class IRToken(Token): # type: ignore
         return "'''" + self + "'''"
 
     def pretty_mp_logical_implicit(self) -> str:
-        if self.mmp.write_toml or self.mmp.fix_implicit:
+        if self.mmp.write_toml and self.mmp.fix_implicit:
             return str(self)
         return ''
 
@@ -99,6 +99,7 @@ class IRTree(Tree): # type: ignore
     table_key: Any = None
     mmp: Any = None
     array_values: List[Any] = []
+    has_val: bool = False # used in _mp_expr_to_array to indicate array_value has a vaL
 
     def _hoist_comments(self, children: List[Any], remove_newlines: bool=False) -> str:
         """
@@ -144,10 +145,12 @@ class IRTree(Tree): # type: ignore
 
     def pretty_mp_expr(self, level: int): # type: ignore
         simple_token: bool = False
-        comments: str = ''
         if self.mmp.write_toml and level == 0:
-            yield " ''' "
-            comments = self._hoist_comments(self.children) # type: ignore
+            yield '"'
+        # comments: str = ''
+        # if self.mmp.write_toml and level == 0:
+        #    yield " ''' "
+        #    comments = self._hoist_comments(self.children) # type: ignore
         if len(self.children) == 1 and isinstance(self.children[0], IRToken): # type: ignore
             simple_token = True
         if self.mmp.debug_expr and not simple_token: # type: ignore
@@ -156,9 +159,11 @@ class IRTree(Tree): # type: ignore
             yield from child._pretty(level + 1) # type: ignore
         if self.mmp.debug_expr and not simple_token: # type: ignore
             yield ')'
+        # if self.mmp.write_toml and level == 0:
+        #    yield " ''' "
+        #    yield comments
         if self.mmp.write_toml and level == 0:
-            yield " ''' "
-            yield comments
+            yield '"'
 
     def pretty_array_values(self, level: int, values: Any): # type: ignore
         seen_val: bool = False
@@ -274,18 +279,18 @@ class IRTransformer(Transformer): # type: ignore
         tree.mmp = self.mmp
         return tree
 
-    def _val_should_not_be_mp_expr(self, args: Tuple[Any]) -> bool:
-        # self.mmp.err('  _val_should_not_be_mp_expr')
+    def _val_should_not_be_mp_expr(self, args: Tuple[Any]) -> Tuple[bool, bool]:
+        "Returns tuple of (should_not_be_mp_expr, key_ends_in_if)"
+        should_not_be_mp_expr: bool = False
+        key_ends_in_if: bool = False
         if isinstance(args[2], IRTree) and args[2].data == 'val': # type: ignore
-            # self.mmp.err('  is a val')
             if len(args[2].children) == 1 and isinstance(args[2].children[0], IRTree) and args[2].children[0].data == 'mp_expr': # type: ignore
-                # self.mmp.err('  is an mp_expr')
                 if isinstance(args[0], Tree) and args[0].data == 'key' and len(args[0].children) == 1 and isinstance(args[0].children[0], IRToken) and args[0].children[0].type == 'unquoted_key' and args[0].children[0].endswith('-if'): # type: ignore
-                    # self.mmp.err('  is an mp_expr key ending in -if')
+                    key_ends_in_if = True
                     self.mmp.read_toml = False # we found a *-if keyval, thus we preserve the mp_expr
                 else:
-                    return True # convert from mp_expr to unquoted_string or implicit_array
-        return False
+                    should_not_be_mp_expr = True # convert from mp_expr to unquoted_string or implicit_array
+        return (should_not_be_mp_expr, key_ends_in_if)
 
     def _convert_mp_expr(self, children: List[Any], ia: Tree[Any] | None=None) -> Tree[Any]:
         if ia == None:
@@ -295,10 +300,10 @@ class IRTransformer(Transformer): # type: ignore
             if len(ia.children) == 1: # type: ignore
                 # singleton value
                 iav = ia.children[0]
-                if self.mmp.write_toml:
-                    comments: str = iav._hoist_comments(iav.children, True) # type: ignore
-                    if len(comments) > 0: # type: ignore
-                        iav.children.append(IRToken('ws_comment_newline', comments, self.mmp)) # type: ignore
+                # if self.mmp.write_toml:
+                #     comments: str = iav._hoist_comments(iav.children, True) # type: ignore
+                #     if len(comments) > 0: # type: ignore
+                #         iav.children.append(IRToken('ws_comment_newline', comments, self.mmp)) # type: ignore
                 for child in iav.children: # type: ignore
                     if isinstance(child, IRToken):
                         if child.type == 'alpha_unquoted_key': # type: ignore
@@ -367,6 +372,85 @@ class IRTransformer(Transformer): # type: ignore
                 else:
                     raise Exception(f'unexpected token in mp_expr: {child.__repr__()}')
         return ia # type: ignore
+
+    def _mp_expr_to_array(self, children: List[Any], array: Tree[Any] | None=None) -> Tree[Any]:
+        if array == None:
+            array_value = IRTree('array_value', [])
+            array_value.mmp = self.mmp
+            array_values = IRTree('array_values', [array_value])
+            array_values.mmp = self.mmp
+            array = IRTree('array', [array_values])
+            array.mmp = self.mmp
+            array = self._mp_expr_to_array(children[2].children, array) # type: ignore
+            # handle the last array_value
+            array_values = array.children[0]
+            array_value = array_values.children[-1]
+            if array_value.has_val: # type: ignore
+                # re-promote all (non leading ws) array_value children to mp_expr
+                mp_expr: IRTree = IRTree('mp_expr', [], None)
+                mp_expr.mmp = self.mmp
+                i: int = 0
+                while i < len(array_value.children) and isinstance(array_value.children[i], IRToken) and array_value.children[i].type.startswith('ws'): # type: ignore
+                    i += 1
+                mp_expr.children = array_value.children[i:] # type: ignore
+                array_value.children = array_value.children[0:i] # type: ignore
+                array_value.children.append(mp_expr) # here is your ONE mp_expr per line
+            # handle adding white space for a one-liner
+            if len(array_values.children) == 1:
+                array_value = array_values.children[0]
+                ws: str = ''
+                i = 0
+                while i < len(array_value.children) and isinstance(array_value.children[i], IRToken) and array_value.children[i].type.startswith('ws'): # type: ignore
+                    ws += str(array_value.children[i])
+                    i += 1
+                if ws.find('\n') < 0:
+                    ws = '\n  ' + ws # start on next line
+                array_value.children = array_value.children[i:] # type: ignore
+                array_value.children.insert(0, IRToken('ws_comment_newline1', ws, self.mmp))
+            # setup final keyval
+            children[2].children = [array]
+            keyval_sep: IRToken = children[1] # type: ignore
+            if keyval_sep[-1] != ' ':
+                children[1] = IRToken('keyval_sep', str(keyval_sep) + ' ', self.mmp)
+            keyval = IRTree('keyval', children)
+            keyval.mmp = self.mmp
+            return keyval
+        else:
+            for i in range(len(children)):
+                child = children[i]
+                if isinstance(child, IRTree):
+                    if child.data == 'mp_expr':
+                        array = self._mp_expr_to_array(child.children, array) # type: ignore
+                    else:
+                        raise Exception(f'unexpected child of mp_expr: {child.__repr__()}')
+                elif child.type == 'mp_logical_implicit':
+                    pass # ignore
+                else:
+                    array_values = array.children[0]
+                    array_value = array_values.children[-1]
+                    if child.type.startswith('ws_comment_newline') and child.find('\n') >= 0:
+                        if array_value.has_val: # type: ignore
+                        # prepare next new array value
+                            new_array_value = IRTree('array_value', []) # add comment to next array_value
+                            new_array_value.mmp = self.mmp
+                            while isinstance(array_value.children[-1], IRToken) and array_value.children[-1].type.startswith('ws'): # type: ignore
+                                new_array_value.children.append(array_value.children.pop()) # type: ignore
+                            # move ending whitespace to new_array_value below
+                            # re-promote all (non leading ws) array_value children to mp_expr
+                            mp_expr: IRTree = IRTree('mp_expr', [], None)
+                            mp_expr.mmp = self.mmp
+                            i: int = 0
+                            while i < len(array_value.children) and isinstance(array_value.children[i], IRToken) and array_value.children[i].type.startswith('ws'): # type: ignore
+                                i += 1
+                            mp_expr.children = array_value.children[i:] # type: ignore
+                            array_value.children = array_value.children[0:i] # type: ignore
+                            array_value.children.append(mp_expr) # here is your ONE mp_expr per line
+                            array_values.children.append(new_array_value)
+                            array_value = new_array_value
+                    if not child.type.startswith('ws'):
+                        array_value.has_val = True # type: ignore
+                    array_value.children.append(child) # type: ignore
+        return array # type: ignore
 
     def _val_should_be_unquoted_string(self, args: Tuple[Any]) -> bool:
         if isinstance(args[2], IRTree) and args[2].data == 'val': # type: ignore
@@ -625,12 +709,17 @@ class IRTransformer(Transformer): # type: ignore
     def keyval(self, args: Tuple[Any]) -> Tree[Any]:
         rule: str = sys._getframe().f_code.co_name # type: ignore
         self._debug_args(args, rule)
-        if self._val_should_not_be_mp_expr(args):
+        should_not_be_mp_expr: bool = False
+        key_ends_in_if: bool = False
+        (should_not_be_mp_expr, key_ends_in_if) = self._val_should_not_be_mp_expr(args)
+        if should_not_be_mp_expr:
             tree = self._convert_mp_expr(list(args))
             if self._val_should_be_unquoted_string(tree.children): # type: ignore
                 tree = self._convert_unquoted_string(tree.children) # type: ignore
+        elif key_ends_in_if:
+            tree = self._mp_expr_to_array(list(args))
         else:
-            tree = self._tree(args)
+            tree = self._tree(args=args)
         return tree
 
     def keyval_sep(self, args: Tuple[Any]) -> Token:

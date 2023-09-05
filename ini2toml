@@ -32,11 +32,13 @@ for file in $files; do
         echo "    FAILED to parse ini file: $file"
         exit 1
     fi
-    if ! diff --ignore-blank-lines -u "$MOZILLA_CENTRAL/$file" "$ini" ; then
-        echo "    NOT SAME: could not recreate the ini file"
-        exit 2
-    fi
-    if ! mmp.py -v -r "$file" --fix-implicit -o "$toml.raw" > "$debug" 2>&1 ; then
+    # Cannot do an exact match since
+    # Bug 1848994 Allow comments in manifestparser conditions
+    # if ! diff --ignore-blank-lines -u "$MOZILLA_CENTRAL/$file" "$ini" ; then
+    #     echo "    NOT SAME: could not recreate the ini file"
+    #     exit 2
+    # fi
+    if ! mmp.py -v -r "$file" -o "$toml.raw" > "$debug" 2>&1 ; then
         echo "    FAILED to write TOML"
         exit 1
     fi
