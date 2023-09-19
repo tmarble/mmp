@@ -43,7 +43,7 @@ blank before and after the equals sign.
 
 ## convention for Array of strings values
 
-All condition (`skip-if`, `supported-files`, etc.) right hand side values should
+All condition (`skip-if`), `supported-files`, and `prefs` right hand side values should
 be an array of double quoted strings. If there is one string
 it should be presented on one line:
 
@@ -63,6 +63,42 @@ skip-if = [
 
 Every string (line) in a `*-if` (`skip-if`) value is considered
 to be logically OR'd together.
+
+## One condition per line
+
+Each of the mp_expr's (e.g. skip-if conditions) should
+a minimal condition per line. In other words each line should
+not include a logical OR `||` as each line is implicitly OR'd together.
+
+## Comments may apply to each line
+
+Each line an an mp_expr may have an end of line comment.
+If the same Bug applies to multiple lines the comment should be
+repeated on each relevant line.
+
+## Condition simplification
+
+Each mp_expr (e.g. skip-if condition) should be optimized as follows:
+
+* remove extra parens (when not required by precedence rules)
+* consistent whitespace within an mp_expr
+* `debug == false` => `!false`
+* `bits != 64` => `bits == 32`
+* `os == 'win' && os_version == '10.0'` => `win10_2009`
+
+## Remove conditions for obsolete platforms
+
+* `skip-if = ["os != 'win' || os_version == '6.2'"]` (i.e. Windows 7 does not exist any more)
+*  win/aarch64
+
+## Remove empty right hand values
+
+If an INI file had `support-files =` (no value) the TOML translation
+would be `support-files =  '' # no value from INI` -- remove these
+lines entirely.
+
+Notable exception to this convention is `disabled = ` which should become
+`disabled = true`.
 
 ## Comments for a section must appear below the section header
 

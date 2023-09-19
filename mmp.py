@@ -15,6 +15,17 @@ from lark import Lark, Transformer, Tree, Token
 from lark import v_args # type: ignore
 from lark.exceptions import UnexpectedToken, GrammarError, ConfigurationError, UnexpectedCharacters
 
+
+array_keys = {
+    'support-files': True,
+    'prefs': True }
+
+uq_keys = {
+    'disabled': True,
+    'reason': True,
+    'run-sequentially': True,
+    'tags': True, }
+
 class IRToken(Token): # type: ignore
     """
     Customization of Token class to support pretty printing
@@ -89,6 +100,8 @@ class IRToken(Token): # type: ignore
             yield self.pretty_ws_ini_newline()
         elif self.type == 'prefs_quote':
             yield self.pretty_prefs_quote()
+        elif self.type == 'ws_ignore':
+            pass
         else: # self.type == 'unquoted_key':
             yield str(self)
 
@@ -99,9 +112,9 @@ class IRTree(Tree): # type: ignore
     table_key: Any = None
     mmp: Any = None
     array_values: List[Any] = []
-    has_val: bool = False # used in _mp_expr_to_array to indicate array_value has a vaL
+    has_val: bool = False # used in _mp_expr_to_array to indicate array_value has a val
 
-    def _hoist_comments(self, children: List[Any], remove_newlines: bool=False) -> str:
+    def _hoist_comments(self, children: List[Any], remove_ws: bool=False, recurse: bool=True) -> str:
         """
         Hoist comments from this tree (to remove them from the mp_expr when printed as TOML)
         """
@@ -110,38 +123,38 @@ class IRTree(Tree): # type: ignore
         comments: str = ''
         for c in range(len(children)): # type: ignore
             child = children[c] # type: ignore
-            if isinstance(child, IRTree):
-                comments += self._hoist_comments(child.children, remove_newlines) # type: ignore
+            if isinstance(child, IRTree) and recurse:
+                comments += self._hoist_comments(child.children, remove_ws, recurse) # type: ignore
             if isinstance(child, IRToken) and (child.type == 'ws_comment_newline' or child.type == 'ws_comment_newline1'):
                 value: str = str(child)
                 start: int = 0
                 content: str = ''
-                changed: bool = False
                 while start < len(value):
                     m = rx.search(value, start)
                     if m:
                         (i, j) = m.span()
-                        if i > start:
-                            content += value[start:i]
-                        if not remove_newlines:
+                        if not remove_ws:
+                            if i > start:
+                                content += value[start:i]
                             content += '\n'
                         comment = value[i:j]
                         comments += ' ' + comment
                         start = j + 1
-                        changed = True
                     else:
+                        if not remove_ws:
+                            content += value[start:]
                         break
-                if changed: # update child WITHOUT the comment
+                if content != value: # update child WITHOUT the comment
                     children[c] = IRToken(child.type, content, self.mmp) # type: ignore
         return comments
 
     def pretty_dotted_key(self, level: int, children: Any): # type: ignore
         if self.mmp.write_toml:
-            yield "'"
+            yield '"'
         for child in children: # type: ignore
             yield from child._pretty(level) # type: ignore
         if self.mmp.write_toml:
-            yield "'"
+            yield '"'
 
     def pretty_mp_expr(self, level: int): # type: ignore
         simple_token: bool = False
@@ -172,17 +185,15 @@ class IRTree(Tree): # type: ignore
                 if seen_val:
                     yield ','
                 yield from child._pretty(level) # type: ignore
-                seen_val = True
+                if not self.mmp.write_toml: # TOML will handle array_sep explicitly
+                    seen_val = True
             else:
                 yield f'{child}'
 
     def _pretty(self, level: int, _indent_str: str = ''): # type: ignore
         if self.data == 'std_table' or self.data == 'mp_table':
             yield '['
-            if not self.mmp.keep_dotted and isinstance(self.table_key, IRTree) and isinstance(self.table_key.children[0], IRTree) and self.table_key.children[0].data == 'dotted_key': # type: ignore
-                yield from self.pretty_dotted_key(level, self.table_key.children[0].children) # type: ignore
-            else:
-                yield from self.table_key._pretty(level) # type: ignore
+            yield from self.table_key._pretty(level) # type: ignore
             yield ']'
         elif self.data == 'array':
             yield '['
@@ -191,13 +202,16 @@ class IRTree(Tree): # type: ignore
             yield ']'
         elif self.data == 'implicit_array':
             if self.mmp.write_toml:
-                yield ' ['
-            seen_val: bool = False
+                yield '['
+            one: bool = len(self.children) == 1 # type: ignore
+            if not one:
+                yield '\n'
             for child in self.children: # type: ignore
-                if seen_val and self.mmp.write_toml:
-                    yield ','
+                if self.mmp.write_toml and not one:
+                     yield '  '
                 yield from child._pretty(level) # type: ignore
-                seen_val = True
+                if self.mmp.write_toml and not one:
+                     yield ',\n'
             if self.mmp.write_toml:
                 yield ']'
         elif self.data == 'array_values':
@@ -232,11 +246,21 @@ class IRTransformer(Transformer): # type: ignore
             self.mmp.err(f'{rule}: {len(args)}')
             for i in range(len(args)):
                 if isinstance(args[i], Tree) and (args[i].data == 'std_table' or args[i].data == 'mp_table'):
-                    self.mmp.err(f'  {i}: {args[i].__repr__()} [{args[i].table_key}] {type(args[i])}')
+                    self.mmp.err(f'  {i}: {args[i].__repr__()} [{args[i].table_key.__repr__()}] {type(args[i])}')
                 else:
                     self.mmp.err(f'  {i}: {args[i].__repr__()} {type(args[i])}')
         if rule == 'expression':
             self.mmp.err('')
+
+    def _mp_table_key(self, arg: Any) -> Token:
+        value: str = ''
+        if isinstance(arg, Tree):
+            for child in arg.children: # type: ignore
+                val = self._mp_table_key(child)
+                value += str(val)
+        else:
+            value += str(arg)
+        return IRToken('basic_string', value, self.mmp)
 
     def _token(self, args: Tuple[Any], value: str = '', debug: bool=True) -> Token:
         rule: str = sys._getframe(1).f_code.co_name # type: ignore
@@ -262,7 +286,7 @@ class IRTransformer(Transformer): # type: ignore
                 if isinstance(arg, IRTree):
                     children.append(arg) # type: ignore
                 elif isinstance(arg, IRToken): # elide empty tokens
-                    if (arg.type == 'ws' or arg.type == 'ws_comment_newline') and len(arg) == 0:
+                    if arg.type.startswith('ws') and len(arg) == 0:
                         pass
                     else:
                         children.append(arg) # type: ignore
@@ -279,38 +303,51 @@ class IRTransformer(Transformer): # type: ignore
         tree.mmp = self.mmp
         return tree
 
-    def _val_should_not_be_mp_expr(self, args: Tuple[Any]) -> Tuple[bool, bool]:
+    def _val_should_not_be_mp_expr(self, key: str, args: Tuple[Any]) -> Tuple[bool, bool]:
         "Returns tuple of (should_not_be_mp_expr, key_ends_in_if)"
         should_not_be_mp_expr: bool = False
         key_ends_in_if: bool = False
         if isinstance(args[2], IRTree) and args[2].data == 'val': # type: ignore
             if len(args[2].children) == 1 and isinstance(args[2].children[0], IRTree) and args[2].children[0].data == 'mp_expr': # type: ignore
-                if isinstance(args[0], Tree) and args[0].data == 'key' and len(args[0].children) == 1 and isinstance(args[0].children[0], IRToken) and args[0].children[0].type == 'unquoted_key' and args[0].children[0].endswith('-if'): # type: ignore
+                if key.endswith('-if'): # type: ignore
                     key_ends_in_if = True
                     self.mmp.read_toml = False # we found a *-if keyval, thus we preserve the mp_expr
                 else:
                     should_not_be_mp_expr = True # convert from mp_expr to unquoted_string or implicit_array
+            elif self.mmp.write_toml and key.endswith('-if') and len(args[2].children) == 1 and isinstance(args[2].children[0], IRToken) and args[2].children[0].type == 'boolean': # type: ignore
+                key_ends_in_if = True
+                # coerce boolean type to appear as basic_string
+                args[2].children[0].type = 'unquoted_key' # type: ignore
         return (should_not_be_mp_expr, key_ends_in_if)
 
-    def _convert_mp_expr(self, children: List[Any], ia: Tree[Any] | None=None) -> Tree[Any]:
+    def _convert_mp_expr(self, key: str, children: List[Any], ia: Tree[Any] | None=None) -> Tree[Any]:
         if ia == None:
             ia = IRTree('implicit_array', [])
             ia.mmp = self.mmp
-            ia = self._convert_mp_expr(children[2].children, ia) # type: ignore
-            if len(ia.children) == 1: # type: ignore
+            ia = self._convert_mp_expr(key, children[2].children, ia) # type: ignore
+            # if self.mmp.write_toml and not key in uq_keys:
+            #     comments: str = ia._hoist_comments(ia.children, True, False) # type: ignore
+            #     if len(comments) > 0: # type: ignore
+            #         ia.children.append(IRToken('ws_comment_newline', comments + '\n', self.mmp))
+            if len(ia.children) == 1 and key not in array_keys: # type: ignore
                 # singleton value
                 iav = ia.children[0]
                 # if self.mmp.write_toml:
                 #     comments: str = iav._hoist_comments(iav.children, True) # type: ignore
                 #     if len(comments) > 0: # type: ignore
                 #         iav.children.append(IRToken('ws_comment_newline', comments, self.mmp)) # type: ignore
+                first = key in uq_keys and self.mmp.write_toml
                 for child in iav.children: # type: ignore
                     if isinstance(child, IRToken):
                         if child.type == 'alpha_unquoted_key': # type: ignore
                             # unquoted keys need to be quoted in TOML values
                             child.type = 'unquoted_string' # type: ignore
-                        elif child.type.startswith('ws') and child.find('\n') >= 0:
-                            child.type = 'ws_ini_newline' # remove newlines for TOML
+                        elif child.type.startswith('ws'):
+                            if child.find('\n') >= 0:
+                                child.type = 'ws_ini_newline' # remove newlines for TOML
+                            elif first:
+                                child.type = 'ws_ignore' # remove leading whitespace
+                    first = False
                 children[2].children = iav.children # type: ignore
             else:
                 children[2].children = [ia]
@@ -347,12 +384,12 @@ class IRTransformer(Transformer): # type: ignore
                 child = children[i]
                 if isinstance(child, IRTree):
                     if child.data == 'mp_expr':
-                        ia = self._convert_mp_expr(child.children, ia) # type: ignore
+                        ia = self._convert_mp_expr(key, child.children, ia) # type: ignore
                     else:
                         raise Exception(f'unexpected child of mp_expr: {child.__repr__()}')
                 elif child.type == 'mp_logical_implicit':
                     pass # ignore
-                elif child.type == 'ws_comment_newline1':
+                elif child.type.startswith('ws_comment_newline'):
                     # add to the first iav
                     if len(ia.children) > 0:
                         iav = ia.children[0]
@@ -395,23 +432,30 @@ class IRTransformer(Transformer): # type: ignore
                 mp_expr.children = array_value.children[i:] # type: ignore
                 array_value.children = array_value.children[0:i] # type: ignore
                 array_value.children.append(mp_expr) # here is your ONE mp_expr per line
+                if self.mmp.write_toml and len(array_values.children) > 1:
+                    array_value.children.append(IRToken('array_sep', ',\n', self.mmp)) # type: ignore
             # handle adding white space for a one-liner
-            if len(array_values.children) == 1:
+            # if len(array_values.children) == 1:
+            #     array_value = array_values.children[0]
+            #     ws: str = ''
+            #     i = 0
+            #     while i < len(array_value.children) and isinstance(array_value.children[i], IRToken) and array_value.children[i].type.startswith('ws'): # type: ignore
+            #         ws += str(array_value.children[i])
+            #         i += 1
+            #     if ws.find('\n') < 0:
+            #         ws = '\n  ' + ws # start on next line
+            #     array_value.children = array_value.children[i:] # type: ignore
+            #     array_value.children.insert(0, IRToken('ws_comment_newline1', ws, self.mmp))
+            # handle 0 or 1 vs 2+
+            if self.mmp.write_toml:
                 array_value = array_values.children[0]
-                ws: str = ''
-                i = 0
-                while i < len(array_value.children) and isinstance(array_value.children[i], IRToken) and array_value.children[i].type.startswith('ws'): # type: ignore
-                    ws += str(array_value.children[i])
-                    i += 1
-                if ws.find('\n') < 0:
-                    ws = '\n  ' + ws # start on next line
-                array_value.children = array_value.children[i:] # type: ignore
-                array_value.children.insert(0, IRToken('ws_comment_newline1', ws, self.mmp))
-            # setup final keyval
+                comments: str = array_value._hoist_comments(array_value.children, True, False) # type: ignore
+                if len(comments) > 0: # type: ignore
+                    array_value.children.append(IRToken('ws_comment_newline', comments + '\n', self.mmp))
+                if len(array_values.children) > 1:
+                    array_value.children.insert(0, IRToken('ws_comment_newline', '\n  ', self.mmp))
+            # setup val
             children[2].children = [array]
-            keyval_sep: IRToken = children[1] # type: ignore
-            if keyval_sep[-1] != ' ':
-                children[1] = IRToken('keyval_sep', str(keyval_sep) + ' ', self.mmp)
             keyval = IRTree('keyval', children)
             keyval.mmp = self.mmp
             return keyval
@@ -430,12 +474,12 @@ class IRTransformer(Transformer): # type: ignore
                     array_value = array_values.children[-1]
                     if child.type.startswith('ws_comment_newline') and child.find('\n') >= 0:
                         if array_value.has_val: # type: ignore
-                        # prepare next new array value
+                            # prepare next new array value
                             new_array_value = IRTree('array_value', []) # add comment to next array_value
                             new_array_value.mmp = self.mmp
+                            # move ending whitespace to new_array_value below
                             while isinstance(array_value.children[-1], IRToken) and array_value.children[-1].type.startswith('ws'): # type: ignore
                                 new_array_value.children.append(array_value.children.pop()) # type: ignore
-                            # move ending whitespace to new_array_value below
                             # re-promote all (non leading ws) array_value children to mp_expr
                             mp_expr: IRTree = IRTree('mp_expr', [], None)
                             mp_expr.mmp = self.mmp
@@ -445,6 +489,8 @@ class IRTransformer(Transformer): # type: ignore
                             mp_expr.children = array_value.children[i:] # type: ignore
                             array_value.children = array_value.children[0:i] # type: ignore
                             array_value.children.append(mp_expr) # here is your ONE mp_expr per line
+                            if self.mmp.write_toml:
+                                array_value.children.append(IRToken('array_sep', ',', self.mmp)) # type: ignore
                             array_values.children.append(new_array_value)
                             array_value = new_array_value
                     if not child.type.startswith('ws'):
@@ -455,11 +501,6 @@ class IRTransformer(Transformer): # type: ignore
     def _val_should_be_unquoted_string(self, args: Tuple[Any]) -> bool:
         if isinstance(args[2], IRTree) and args[2].data == 'val': # type: ignore
             if len(args[2].children) == 1 and isinstance(args[2].children[0], IRTree) and args[2].children[0].data == 'implicit_array': # type: ignore
-                uq_keys = {
-                    'disabled': True,
-                    'reason': True,
-                    'run-sequentially': True,
-                    'tags': True, }
                 if isinstance(args[0], Tree) and args[0].data == 'key' and len(args[0].children) == 1 and isinstance(args[0].children[0], IRToken) and args[0].children[0].type == 'unquoted_key' and args[0].children[0] in uq_keys: # type: ignore
                     return True # convert from implicit_array to unquoted_string
         return False
@@ -481,7 +522,7 @@ class IRTransformer(Transformer): # type: ignore
                         elif token.type.startswith('ws'):
                             if len(unquoted_string) > 0:
                                 unquoted_string += str(token)
-                            else:
+                            elif not self.mmp.write_toml:
                                 unquoted_start = str(token)
                         else:
                             unquoted_string = None
@@ -518,15 +559,15 @@ class IRTransformer(Transformer): # type: ignore
         array_values: Tree[Any] | None = None
         if isinstance(args[-1], Tree) and args[-1].data == 'array_values': # type: ignore
             array_values = args.pop() # type: ignore
-            if isinstance(args[-1], Token) and args[-1].type == 'array_sep': # type: ignore
-                args.pop() # type: ignore
         else:
             array_values = IRTree(rule, [], None)
             array_values.mmp = self.mmp
-            if args[-1] == None:
-                args.pop() # type: ignore
+        if args[-1] is None or isinstance(args[-1], Token) and args[-1].type == 'array_sep': # type: ignore
+            args.pop() # type: ignore
         array_value: IRTree = IRTree('array_value', self._remove_empty_children(args), None)
         array_value.mmp = self.mmp
+        if self.mmp.write_toml:
+            array_value.children.append(IRToken('array_sep', ',', self.mmp)) # type: ignore
         array_values.children.insert(0, array_value) # type: ignore
         return array_values # type: ignore
 
@@ -643,7 +684,16 @@ class IRTransformer(Transformer): # type: ignore
     def expression(self, args: Tuple[Any]) -> None | Tree[Any]:
         rule: str = sys._getframe().f_code.co_name # type: ignore
         self._debug_args(args, rule)
-        children = [e for e in args if e != None and (isinstance(e, Tree) or e.type != 'ws' or e != '')] # type: ignore
+        children = []
+        first = True
+        for child in args:
+            if child is not None:
+                if isinstance(child, Tree) or child.type == 'comment':
+                    children.append(child) # type: ignore
+                elif child.type.startswith('ws'):
+                    if len(child) > 0 and (not self.mmp.write_toml or not first):
+                        children.append(child) # type: ignore
+            first = False
         if len(children) == 0: # type: ignore
             return None
         tree: IRTree = IRTree('expression', children, None)
@@ -709,11 +759,14 @@ class IRTransformer(Transformer): # type: ignore
     def keyval(self, args: Tuple[Any]) -> Tree[Any]:
         rule: str = sys._getframe().f_code.co_name # type: ignore
         self._debug_args(args, rule)
+        key: str = ''
+        if isinstance(args[0], Tree) and args[0].data == 'key' and len(args[0].children) == 1 and isinstance(args[0].children[0], IRToken) and args[0].children[0].type == 'unquoted_key': # type: ignore
+            key = args[0].children[0] # type: ignore
         should_not_be_mp_expr: bool = False
         key_ends_in_if: bool = False
-        (should_not_be_mp_expr, key_ends_in_if) = self._val_should_not_be_mp_expr(args)
+        (should_not_be_mp_expr, key_ends_in_if) = self._val_should_not_be_mp_expr(key, args)
         if should_not_be_mp_expr:
-            tree = self._convert_mp_expr(list(args))
+            tree = self._convert_mp_expr(key, children=list(args))
             if self._val_should_be_unquoted_string(tree.children): # type: ignore
                 tree = self._convert_unquoted_string(tree.children) # type: ignore
         elif key_ends_in_if:
@@ -723,6 +776,8 @@ class IRTransformer(Transformer): # type: ignore
         return tree
 
     def keyval_sep(self, args: Tuple[Any]) -> Token:
+        if self.mmp.write_toml:
+            return IRToken('keyval_sep', ' = ', self.mmp)
         return self._token_combine(args, False)
 
     def literal_string(self, args: Tuple[Any]) -> Token:
@@ -826,11 +881,17 @@ class IRTransformer(Transformer): # type: ignore
         self.mmp.read_toml = False # Illegal TOML syntax found
         tree = IRTree(rule, [], None)
         tree.mmp = self.mmp
-        tree.table_key = args[1] # type: ignore
+        if self.mmp.write_toml:
+            tree.table_key = self._mp_table_key(args[1]) # type: ignore
+        else:
+            tree.table_key = args[1] # type: ignore
         return tree
 
     def mp_terminal(self, args: Tuple[Any]) -> Tree[Any]:
-        return args[0]
+        token = args[0]
+        if self.mmp.write_toml and token.type == 'basic_string':
+            token.type = 'literal_string'
+        return token
 
     def newline(self, args: Tuple[Any]) -> Token:
         return self._token(args, '', False)
@@ -851,7 +912,10 @@ class IRTransformer(Transformer): # type: ignore
         return self._token(args, '+', False)
 
     def prefs_keyval(self, args: Tuple[Any]) -> Tree[Any]:
-        return self._tree(args)
+        children = list(args)
+        if self.mmp.write_toml: # convert WSCHAR to empty ws_comment_newline
+            children[0] = IRToken('ws_comment_newline', '', self.mmp)
+        return self._tree(args, children) # explicitly preserve empty ws_comment_newline
 
     def rparen(self, args: Tuple[Any]) -> Token:
         return self._token(args, '', False)
@@ -870,6 +934,10 @@ class IRTransformer(Transformer): # type: ignore
         tree = IRTree(rule, [], None)
         tree.mmp = self.mmp
         tree.table_key = args[1] # type: ignore
+        if self.mmp.write_toml:
+            tree.table_key = self._mp_table_key(args[1]) # type: ignore
+        else:
+            tree.table_key = args[1] # type: ignore
         return tree
 
     def string(self, args: Tuple[Any]) -> Token:
@@ -964,7 +1032,6 @@ class MetaManifestParser:
     ini_files: Dict[str, bool] = field(default={}) # type: ignore
     ir_ebnf: str = field(validator=validators.instance_of(type=str), # type: ignore
                          default='') # type: ignore
-    keep_dotted: bool = field(validator=validators.instance_of(type=bool), default=False) # type: ignore
     match: str = field(default='(mochitest|chrome|a11y|browser|xpcshell)\x2Eini')
     regex: Pattern[str] = field(default=None)
     read_toml: bool = field(validator=validators.instance_of(type=bool), default=True) # type: ignore
@@ -1061,7 +1128,6 @@ class MetaManifestParser:
         self.strict_toml = args.strict_toml
         self.debug_expr = args.debug_expr
         self.fix_implicit = args.fix_implicit
-        self.keep_dotted = args.keep_dotted
         if args.output_file:
             self.outfile = open(file=args.output_file, mode='w')
         if self.verbose:
@@ -1073,7 +1139,6 @@ class MetaManifestParser:
             self.err(f'strict-toml: {self.strict_toml}')
             self.err(f'debug-expr: {self.debug_expr}')
             self.err(f'fix-implicit: {self.fix_implicit}')
-            self.err(f'keep-dotted: {self.keep_dotted}')
         if not self.validate_topsrcdir(args.topsrcdir):
             self.err(f'topsrcdir invalid: "{args.topsrcdir}"')
             rc = 1

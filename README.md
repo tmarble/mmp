@@ -153,12 +153,15 @@ $ ini2toml ./testing/mochitest/baselinecoverage/browser_chrome/browser.ini
   ./testing/mochitest/baselinecoverage/browser_chrome/browser.toml
 $
 ```
+See  [EXAMPLE](EXAMPLE.md) for a detailed migration example
 
 ## Documentation
 
 See...
 
 * [DESIGN](DESIGN.md) for more background
+* [EXAMPLE](EXAMPLE.md) a detailed migration example
+* [LINTER](LINTER.md) Manifestparser TOML style guide
 * [QUESTIONS](QUESTIONS.md) for open questions
 * [TESTING](TESTING.md) for testing **mmp**
 

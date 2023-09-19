@@ -6,10 +6,26 @@
 dir=$(dirname $0)
 program=$(basename $0)
 build="$dir/build"
+mozbuilds="$build/mozbuild.txt"
 files=$*
 
 mkdir -p "$build"
 
+# Ensure env var is set
+if [ -z "$MOZILLA_CENTRAL" ]; then
+    echo "Please export MOZILLA_CENTRAL=/path/to/src/mozilla-central"
+    exit 1
+fi
+
+cd "$MOZILLA_CENTRAL"
+
+# Update mozbuild.txt file, if needed
+if [ ! -e "$mozbuilds" ]; then
+    find . -name moz.build | grep -v ^obj | xargs grep '\.ini' | awk -F\" '{print substr($1,0,index($1,"moz.build")-1)$2, $0}' | sort > "$mozbuilds"
+fi
+
+mbfiles="$build/mbfiles.txt"
+# Ensure files is a list of INI files
 if [ -e "$files" ]; then
   list="${files%%.txt}"
   if [ "$list" != "$files" ]; then
@@ -18,35 +34,73 @@ if [ -e "$files" ]; then
   fi
 fi
 
+n=0
 for file in $files; do
-    echo $file
+    n=$(( $n + 1 ))
+done
+
+i=0
+for file in $files; do
+    i=$(( $i + 1 ))
+    echo == $i of $n == $file
+    if [ ! -e "$file.bak" ]; then
+        echo "    Saving INI backup to: $file.bak"
+        cp "$file" "$file.bak"
+    fi
     new_toml="${file%%.ini}.toml"
     if [ -e "$new_toml" ]; then
         echo "    TOML file exists (skipping): $new_toml"
         continue
     fi
-    debug="$build/output.err"
-    ini="$build/output.ini"
-    toml="${ini%%.ini}.toml"
-    if ! mmp.py -v -r "$file" -W -o "$ini" > "$debug" 2>&1 ; then
-        echo "    FAILED to parse ini file: $file"
-        exit 1
-    fi
-    # Cannot do an exact match since
-    # Bug 1848994 Allow comments in manifestparser conditions
-    # if ! diff --ignore-blank-lines -u "$MOZILLA_CENTRAL/$file" "$ini" ; then
-    #     echo "    NOT SAME: could not recreate the ini file"
-    #     exit 2
-    # fi
-    if ! mmp.py -v -r "$file" -o "$toml.raw" > "$debug" 2>&1 ; then
+    debug="$build/convert.err"
+    toml="$build/output.toml"
+    if ! mmp.py --verbose --read-ini "$file.bak" --output-file "$toml.raw" > "$debug" 2>&1 ; then
         echo "    FAILED to write TOML"
         exit 1
     fi
+    debug="$build/sort.err"
     if ! read-toml.py --v --alpha-sort -r "$toml.raw" --output-file "$toml" > "$debug" 2>&1 ; then
         echo "    WROTE invalid TOML"
         exit 1
     fi
+    # Find moz.build references
+    line=$(grep "^$file" "$mozbuilds" | cut -d\  -f2-)
+    if [ -n "$line" ]; then
+        mozbuild=$(echo $line | cut -d: -f1)
+        if [ -e "$mozbuild" ]; then
+            echo "    Updating reference in $mozbuild"
+            echo "$mozbuild" >> "$mbfiles"
+            if [ ! -e "$mozbuild.bak" ]; then
+                echo "    Saving moz.build backup to: $mozbuild.bak"
+                cp "$mozbuild" "$mozbuild.bak"
+            fi
+            if [ ! -e "$mozbuild.new" ]; then
+                cp "$mozbuild" "$mozbuild.new"
+            fi
+            iniref=$(echo $line | cut -d\" -f2)
+            tomlref=$(echo $iniref | sed 's/\.ini/.toml/')
+            sed s%$iniref%$tomlref% "$mozbuild.new" > "$mozbuild.tmp"
+            mv "$mozbuild.tmp" "$mozbuild.new"
+        else
+            echo "    file not found: $mozbuild"
+            exit 1
+        fi
+    fi
+    chg mv "$file" "$new_toml"
     cp "$toml" "$new_toml"
-    echo "    $new_toml"
-    rm -f "$ini" "$toml.raw" "$toml" "$debug"
+    echo "    MIGRATED: hg mv $file $new_toml"
+    # rm -f "$ini" "$toml.raw" "$toml" "$debug"
+done
+
+# mv moz.build.new moz.build
+for file in $files; do
+    # Find moz.build references
+    line=$(grep "^$file" "$mozbuilds" | cut -d\  -f2-)
+    if [ -n "$line" ]; then
+        mozbuild=$(echo $line | cut -d: -f1)
+        if [ -e "$mozbuild.new" ]; then # may have already been renamed
+            mv "$mozbuild.new" "$mozbuild"
+            echo "Updated $mozbuild"
+        fi
+    fi
 done

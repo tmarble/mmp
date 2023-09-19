@@ -10,7 +10,7 @@ import sys
 
 from typing import List, TextIO, Any
 from attrs import define, field, validators
-from tomlkit import parse, document, dumps
+from tomlkit import parse, document, dumps, table
 from tomlkit.items import SingleKey, KeyType
 
 @define
@@ -125,12 +125,14 @@ class ReadToml:
                 manifest = document()
                 if 'DEFAULT' in unsorted:
                     manifest.add('DEFAULT', unsorted['DEFAULT'])
+                else:
+                    manifest.add('DEFAULT', table())
                 sections = [k for k in unsorted.keys() if k != 'DEFAULT']
                 for k in sorted(sections):
-                    if k.find("'") >= 0:
+                    if k.find('"') >= 0:
                         section = k
                     else:
-                        section = SingleKey(k, KeyType.Literal)
+                        section = SingleKey(k, KeyType.Basic)
                     manifest.add(section, unsorted[k])
             self.out(dumps(manifest), end='')
         except Exception as e:
