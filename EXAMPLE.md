@@ -1023,47 +1023,6 @@ Updated ./dom/xslt/moz.build
 tmarble@espoir 222 :)
 ```
 
-## run 8
-
-```
-```
-
-## run 9
-
-```
-```
-
-## run 10
-
-```
-```
-
-## run 11
-
-```
-```
-
-## run 12
-
-```
-```
-
-## run 13
-
-```
-```
-
-## run 14
-
-```
-```
-
-## run 15
-
-```
-```
-
-
 ## Manual TOML review
 
 As certain transformations to our target ManifestParser TOML style
@@ -1077,7 +1036,7 @@ which will open both the INI file (`*.ini.bak`) and the TOML file.
 Typically small changes within the INI file will allow the migration to proceed
 
 ```
-for ini in $(cat $MMP/build/mp-batch5.txt); do \
+for ini in $(cat $MMP/build/mp-batch6.txt); do \
   echo == $ini ==;  \
   toml=${ini%%.ini}.toml; \
   emacsclient -n $ini.bak; \
@@ -1093,7 +1052,7 @@ a quote or a comma and causing parsing to fail. The `read-toml.py` program
 will parse the TOML file using **tomlkit** and flag any errors.
 
 ```
-for ini in $(cat $MMP/build/mp-batch5.txt); do \
+for ini in $(cat $MMP/build/mp-batch6.txt); do \
   echo == $ini ==;  \
   toml=${ini%%.ini}.toml; \
   $MMP/read-toml.py -r $toml > /dev/null; \
