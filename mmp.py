@@ -201,6 +201,8 @@ class IRTree(Tree): # type: ignore
                 yield '\n  '
             for child in self.children: # type: ignore
                 yield from child._pretty(level) # type: ignore
+                if not one:
+                    yield ','
             if self.mmp.write_toml:
                 if not one:
                     yield '\n'
@@ -1238,20 +1240,18 @@ class MetaManifestParser:
             # regex = r'([A-Z_]+MANIFESTS) \+= \[([^\\]]+)\\]'
             regex = r'([A-Z_]+MANIFESTS)'
             rx = re.compile(regex, re.MULTILINE)
-            file_regex = r'\[([^\[^\"]*\"[A-Za-z0-9/_.]+\")+\]'
-            file_rx = re.compile(file_regex, re.MULTILINE)
+            file_regex = r' \+= \[.*(\"[A-Za-z0-9/_.]+\".*)+\]'
+            file_rx = re.compile(file_regex, re.DOTALL)
             start: int = 0
             while start < len(mb):
                 m = rx.search(mb, start)
                 if m:
                     (i, j) = m.span()
                     if i >= start:
-                        filename = mb[i:j]
-                        self.verr(f'FILENAME={filename}=')
-                        file_m = file_rx.findall(mb, j)
-                        self.verr(f'FILE_M={file_m}=')
-                        for fm in file_m:
-                            self.verr('  ' + fm.span())
+                        title = mb[i:j]
+                        self.verr(f'TITLE={title}=')
+                        for file_m in file_rx.finditer(mb,j):
+                            self.verr(f'  FILE_M={file_m}={file_m.span()}')
                     start = j + 1
                 else:
                     break
