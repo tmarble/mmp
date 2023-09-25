@@ -1205,7 +1205,7 @@ class MetaManifestParser:
             return
         pad = '  ' * indent
         if ini.find('[include:') >= 0:
-            self.ini_files[path] = False
+            self.ini_files[path] = self.ini_files.get(path, False)
             self.verr(f'{pad}INCLUDES found in {path}:')
             regex = '\\[include:([^\\]]+)\\]'
             rx = re.compile(regex, re.MULTILINE)
@@ -1220,7 +1220,7 @@ class MetaManifestParser:
                         include_path = os.path.join(os.path.dirname(path), include_filename)
                         include_path = os.path.realpath(include_path)
                         include_path = '.' + include_path[len(self.topsrcdir):] # make path relative
-                        self.ini_files[include_path] = False
+                        self.ini_files[include_path] = self.ini_files.get(include_path, False)
                         self.check_for_includes(include_path, indent+1)
                     start = j + 1
                 else:
@@ -1237,10 +1237,9 @@ class MetaManifestParser:
             return
         if mb.find('MANIFESTS') >= 0:
             self.verr(f'MOZ.BUILD={path}=')
-            # regex = r'([A-Z_]+MANIFESTS) \+= \[([^\\]]+)\\]'
             regex = r'([A-Z_]+MANIFESTS)'
             rx = re.compile(regex, re.MULTILINE)
-            file_regex = r' \+= \[.*(\"[A-Za-z0-9/_.]+\".*)+\]'
+            file_regex = r'\"([A-Za-z0-9/_.]+)\"'
             file_rx = re.compile(file_regex, re.DOTALL)
             start: int = 0
             while start < len(mb):
@@ -1249,9 +1248,22 @@ class MetaManifestParser:
                     (i, j) = m.span()
                     if i >= start:
                         title = mb[i:j]
-                        self.verr(f'TITLE={title}=')
-                        for file_m in file_rx.finditer(mb,j):
-                            self.verr(f'  FILE_M={file_m}={file_m.span()}')
+                        self.verr(f'  TITLE={title}')
+                        tj = mb.index(']', j)
+                        for file_m in file_rx.finditer(mb,j,tj+1):
+                            # self.verr(f'    FILE_M={file_m}={file_m.span()}')
+                            # (_, mj) = file_m.span()
+                            match: str = file_m.group(0) # type: ignore
+                            # fi = match.index('"') # type: ignore
+                            # fj = match.index('"', fi+1) # type: ignore
+                            filename: str = match[1:-1] # type: ignore
+                            # self.verr(f'    FILE_M={file_m}={file_m.span()}={filename}')
+                            if filename.endswith('.ini'):
+                                pathname = os.path.join(os.path.dirname(path), filename)
+                                self.verr(f'    {filename} = {pathname}')
+                                self.ini_files[pathname] = self.ini_files.get(pathname, False)
+                                self.check_for_includes(pathname)
+                            j = tj
                     start = j + 1
                 else:
                     break
@@ -1262,13 +1274,15 @@ class MetaManifestParser:
         """
         self.ini_files = {}
         for root, _dirs, files in os.walk(self.topsrcdir, topdown=True):
+            if root.find(os.sep + 'obj-') >= 0:
+                continue
             for file in files:
                 if file.endswith('.ini'):
                     fullpath: str = os.path.join(root, file)
                     path = '.' + fullpath[len(self.topsrcdir):] # make path relative
                     if not path.startswith('./obj-'): # ignore build directories
                         if self.regex.fullmatch(file):
-                            self.ini_files[path] = False
+                            self.ini_files[path] = self.ini_files.get(path, False)
                         if not self.ignore_includes:
                             self.check_for_includes(path)
                 elif file == 'moz.build':
