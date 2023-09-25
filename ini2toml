@@ -21,7 +21,7 @@ cd "$MOZILLA_CENTRAL"
 
 # Update mozbuild.txt file, if needed
 if [ ! -e "$mozbuilds" ]; then
-    find . -name moz.build | grep -v ^obj | xargs grep '\.ini' | awk -F\" '{print substr($1,0,index($1,"moz.build")-1)$2, $0}' | sort > "$mozbuilds"
+    find . -name moz.build | grep -v ^obj | | grep -v '\*\*' | xargs grep '\.ini' | awk -F\" '{print substr($1,0,index($1,"moz.build")-1)$2, $0}' | sort > "$mozbuilds"
 fi
 
 mbfiles="$build/mbfiles.txt"

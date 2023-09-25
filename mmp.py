@@ -160,10 +160,6 @@ class IRTree(Tree): # type: ignore
         simple_token: bool = False
         if self.mmp.write_toml and level == 0:
             yield '"'
-        # comments: str = ''
-        # if self.mmp.write_toml and level == 0:
-        #    yield " ''' "
-        #    comments = self._hoist_comments(self.children) # type: ignore
         if len(self.children) == 1 and isinstance(self.children[0], IRToken): # type: ignore
             simple_token = True
         if self.mmp.debug_expr and not simple_token: # type: ignore
@@ -172,9 +168,6 @@ class IRTree(Tree): # type: ignore
             yield from child._pretty(level + 1) # type: ignore
         if self.mmp.debug_expr and not simple_token: # type: ignore
             yield ')'
-        # if self.mmp.write_toml and level == 0:
-        #    yield " ''' "
-        #    yield comments
         if self.mmp.write_toml and level == 0:
             yield '"'
 
@@ -205,14 +198,12 @@ class IRTree(Tree): # type: ignore
                 yield '['
             one: bool = len(self.children) == 1 # type: ignore
             if not one:
-                yield '\n'
+                yield '\n  '
             for child in self.children: # type: ignore
-                if self.mmp.write_toml and not one:
-                     yield '  '
                 yield from child._pretty(level) # type: ignore
-                if self.mmp.write_toml and not one:
-                     yield ',\n'
             if self.mmp.write_toml:
+                if not one:
+                    yield '\n'
                 yield ']'
         elif self.data == 'array_values':
             yield from self.pretty_array_values(level, self.children) # type: ignore
@@ -325,17 +316,13 @@ class IRTransformer(Transformer): # type: ignore
             ia = IRTree('implicit_array', [])
             ia.mmp = self.mmp
             ia = self._convert_mp_expr(key, children[2].children, ia) # type: ignore
-            # if self.mmp.write_toml and not key in uq_keys:
-            #     comments: str = ia._hoist_comments(ia.children, True, False) # type: ignore
-            #     if len(comments) > 0: # type: ignore
-            #         ia.children.append(IRToken('ws_comment_newline', comments + '\n', self.mmp))
+            if self.mmp.write_toml and not key in uq_keys:
+                comments: str = ia._hoist_comments(ia.children[0].children, True, False) # type: ignore
+                if len(comments) > 0: # type: ignore
+                    ia.children.append(IRToken('ws_comment_newline', comments + '\n', self.mmp))
             if len(ia.children) == 1 and key not in array_keys: # type: ignore
                 # singleton value
                 iav = ia.children[0]
-                # if self.mmp.write_toml:
-                #     comments: str = iav._hoist_comments(iav.children, True) # type: ignore
-                #     if len(comments) > 0: # type: ignore
-                #         iav.children.append(IRToken('ws_comment_newline', comments, self.mmp)) # type: ignore
                 first = key in uq_keys and self.mmp.write_toml
                 for child in iav.children: # type: ignore
                     if isinstance(child, IRToken):
@@ -434,19 +421,6 @@ class IRTransformer(Transformer): # type: ignore
                 array_value.children.append(mp_expr) # here is your ONE mp_expr per line
                 if self.mmp.write_toml and len(array_values.children) > 1:
                     array_value.children.append(IRToken('array_sep', ',\n', self.mmp)) # type: ignore
-            # handle adding white space for a one-liner
-            # if len(array_values.children) == 1:
-            #     array_value = array_values.children[0]
-            #     ws: str = ''
-            #     i = 0
-            #     while i < len(array_value.children) and isinstance(array_value.children[i], IRToken) and array_value.children[i].type.startswith('ws'): # type: ignore
-            #         ws += str(array_value.children[i])
-            #         i += 1
-            #     if ws.find('\n') < 0:
-            #         ws = '\n  ' + ws # start on next line
-            #     array_value.children = array_value.children[i:] # type: ignore
-            #     array_value.children.insert(0, IRToken('ws_comment_newline1', ws, self.mmp))
-            # handle 0 or 1 vs 2+
             if self.mmp.write_toml:
                 array_value = array_values.children[0]
                 comments: str = array_value._hoist_comments(array_value.children, True, False) # type: ignore
@@ -1222,12 +1196,14 @@ class MetaManifestParser:
         Prints fullpath if it includes a section `[include`
         Then recursively follows include path.
         """
+        if path in self.ini_files and self.ini_files[path]:
+            return # already checked
         ini: str | None = self.read_file_as_string(os.path.join(self.topsrcdir, path))
         if ini == None:
             return
         pad = '  ' * indent
         if ini.find('[include:') >= 0:
-            self.ini_files[path] = True
+            self.ini_files[path] = False
             self.verr(f'{pad}INCLUDES found in {path}:')
             regex = '\\[include:([^\\]]+)\\]'
             rx = re.compile(regex, re.MULTILINE)
@@ -1242,8 +1218,40 @@ class MetaManifestParser:
                         include_path = os.path.join(os.path.dirname(path), include_filename)
                         include_path = os.path.realpath(include_path)
                         include_path = '.' + include_path[len(self.topsrcdir):] # make path relative
-                        self.ini_files[include_path] = True
+                        self.ini_files[include_path] = False
                         self.check_for_includes(include_path, indent+1)
+                    start = j + 1
+                else:
+                    break
+        if path in self.ini_files:
+            self.ini_files[path] = True
+
+    def check_moz_build(self, path: str) -> None:
+        """
+        Checks moz.build for OTHER INI files
+        """
+        mb: str | None = self.read_file_as_string(os.path.join(self.topsrcdir, path))
+        if mb == None:
+            return
+        if mb.find('MANIFESTS') >= 0:
+            self.verr(f'MOZ.BUILD={path}=')
+            # regex = r'([A-Z_]+MANIFESTS) \+= \[([^\\]]+)\\]'
+            regex = r'([A-Z_]+MANIFESTS)'
+            rx = re.compile(regex, re.MULTILINE)
+            file_regex = r'\[([^\[^\"]*\"[A-Za-z0-9/_.]+\")+\]'
+            file_rx = re.compile(file_regex, re.MULTILINE)
+            start: int = 0
+            while start < len(mb):
+                m = rx.search(mb, start)
+                if m:
+                    (i, j) = m.span()
+                    if i >= start:
+                        filename = mb[i:j]
+                        self.verr(f'FILENAME={filename}=')
+                        file_m = file_rx.findall(mb, j)
+                        self.verr(f'FILE_M={file_m}=')
+                        for fm in file_m:
+                            self.verr('  ' + fm.span())
                     start = j + 1
                 else:
                     break
@@ -1260,9 +1268,13 @@ class MetaManifestParser:
                     path = '.' + fullpath[len(self.topsrcdir):] # make path relative
                     if not path.startswith('./obj-'): # ignore build directories
                         if self.regex.fullmatch(file):
-                            self.ini_files[path] = True
+                            self.ini_files[path] = False
                         if not self.ignore_includes:
                             self.check_for_includes(path)
+                elif file == 'moz.build':
+                    fullpath: str = os.path.join(root, file)
+                    path = '.' + fullpath[len(self.topsrcdir):] # make path relative
+                    self.check_moz_build(path)
         for f in sorted(self.ini_files.keys()):
             self.out(f)
         return True

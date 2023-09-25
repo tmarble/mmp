@@ -1076,18 +1076,18 @@ Note that `hg status` will show the `*.bak` files as new/unknown -- we can
 delete these later.
 
 ```
-hg commit -m "Bug 1853243 - convert .ini manifests to .toml: batch 6 {caps,devtools,dom}/**/browser.ini r=jmaher"
+hg commit -m "Bug 1853244 - convert .ini manifests to .toml: batch 6 {caps,devtools,dom}/**/browser.ini r=jmaher"
 ```
 
 
 ## try
 
-For these `browser.ini` files the appropriate **try** command is:
+For these `browser.ini` files the appropriate **try** commands are:
 
 ```
-./mach try fuzzy -q 'browser-chrome'
+./mach try fuzzy -q 'mochitest devtools'
+./mach try fuzzy -q 'mochitest-browser-chrome'
 ```
-
 ## moz phab
 
 Once the **try** is successful then we can submit a review:
