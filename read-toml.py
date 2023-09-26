@@ -6,11 +6,12 @@
 import argparse
 import os
 import os.path
+import re
 import sys
 
 from typing import List, TextIO, Any
 from attrs import define, field, validators
-from tomlkit import parse, document, dumps, table
+from tomlkit import parse, document, dumps, table # type: ignore
 from tomlkit.items import SingleKey, KeyType
 
 @define
@@ -18,16 +19,16 @@ class ReadToml:
     """
     ReadToml is the main class for the read-toml.py program.
     """
-    alpha_sort: bool = field(validator=validators.instance_of(type=bool),
-                             default=False)
+    alpha_sort: bool = field(validator=validators.instance_of(type=bool), # type: ignore
+                             default=False) # type: ignore
     argv: List[str] = field(validator=validators.deep_iterable(
                                 member_validator=validators.instance_of(type=str),
                                 iterable_validator=validators.instance_of(type=list)),
                             default=['mmp.py'])
     errfile: TextIO = field(default=sys.stderr)
     outfile: TextIO = field(default=sys.stdout)
-    verbose: bool = field(validator=validators.instance_of(type=bool),
-                          default=False)
+    verbose: bool = field(validator=validators.instance_of(type=bool), # type: ignore
+                          default=False) # type: ignore
 
     def out(self, a: Any, end: str = '\n') -> None:
         "Print to outfile (STDOUT)"
@@ -119,21 +120,36 @@ class ReadToml:
         if toml == None:
             return False
         try:
-            manifest = parse(toml)
+            unsorted = parse(toml)
+            manifest = document()
+            if 'DEFAULT' in unsorted:
+                manifest.add('DEFAULT', unsorted['DEFAULT']) # type: ignore
+            else:
+                manifest.add('DEFAULT', table())
+            sections = [k for k in unsorted.keys() if k != 'DEFAULT'] # type: ignore
             if self.alpha_sort:
-                unsorted = manifest
-                manifest = document()
-                if 'DEFAULT' in unsorted:
-                    manifest.add('DEFAULT', unsorted['DEFAULT'])
+                regex = r'^([A-Za-z0-9_./-]*)([Bb][Uu][Gg])([0-9]+)([A-Za-z0-9_./-]*)$'
+                rx = re.compile(regex)
+
+                def keyfn(k: Any) -> str:
+                    name: str = str(k)
+                    m = rx.findall(name)
+                    if len(m) == 1 and len(m[0]) == 4:
+                        prefix = m[0][0]
+                        bug = m[0][1]
+                        num = m[0][2]
+                        suffix = m[0][3]
+                        name = f'{prefix}{bug.lower()}{int(num):09d}{suffix}'
+                        return name
+                    return name
+
+                sections = sorted(sections, key=keyfn) # type: ignore
+            for k in sections: # type: ignore
+                if k.find('"') >= 0: # type: ignore
+                    section = k # type: ignore
                 else:
-                    manifest.add('DEFAULT', table())
-                sections = [k for k in unsorted.keys() if k != 'DEFAULT']
-                for k in sorted(sections):
-                    if k.find('"') >= 0:
-                        section = k
-                    else:
-                        section = SingleKey(k, KeyType.Basic)
-                    manifest.add(section, unsorted[k])
+                    section = SingleKey(k, KeyType.Basic) # type: ignore
+                manifest.add(section, unsorted[k]) # type: ignore
             self.out(dumps(manifest), end='')
         except Exception as e:
             self.err(f'Error: {e}')
