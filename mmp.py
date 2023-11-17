@@ -1290,7 +1290,8 @@ class MetaManifestParser:
                     path = '.' + fullpath[len(self.topsrcdir):] # make path relative
                     self.check_moz_build(path)
         for f in sorted(self.ini_files.keys()):
-            self.out(f)
+            if f.find('generated') < 0:
+                self.out(f)
         return True
 
     def initialize_parser(self) -> bool:

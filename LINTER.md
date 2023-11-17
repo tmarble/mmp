@@ -84,7 +84,6 @@ Each mp_expr (e.g. skip-if condition) should be optimized as follows:
 * consistent whitespace within an mp_expr
 * `debug == false` => `!false`
 * `bits != 64` => `bits == 32`
-* `os == 'win' && os_version == '10.0'` => `win10_2009`
 
 ## Remove conditions for obsolete platforms
 
